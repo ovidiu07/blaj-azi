@@ -1,0 +1,9 @@
+export type PublicEvent = { id:string;contentId?:number;entityId?:number;title:string;date:string;startDate:string;time:string;place:string;category:string;price:string;image:string;locality?:string;description?:string;source?:string;isDemo?:boolean;updatedAt?:string };
+export type PublicBusiness = { id:string;contentId?:number;entityId?:number;name:string;category:string;locality:string;phone:string;promoted:boolean;description?:string;source?:string;isDemo?:boolean;verified?:boolean;updatedAt?:string };
+export type PublicOffer = { id:string;contentId?:number;entityId?:number;title:string;business:string;price:string;old:string;until:string;description?:string;source?:string;isDemo?:boolean;promoted?:boolean;updatedAt?:string };
+export type PublicRestaurant = { id:string;contentId?:number;entityId?:number;name:string;type:string;dish:string;price:string;services:string;description?:string;source?:string;isDemo?:boolean;updatedAt?:string };
+export type PublicJob = { id:string;contentId?:number;entityId?:number;title:string;company:string;locality:string;type:string;schedule:string;salary:string;transport:boolean;description?:string;source?:string;isDemo?:boolean;updatedAt?:string };
+export type PublicPlace = { id:string;contentId?:number;entityId?:number;title:string;eyebrow:string;image:string;text:string;source:string;locality?:string;isDemo?:boolean;updatedAt?:string };
+export type PublicPost = { id:string;contentId?:number;entityId?:number;title:string;excerpt:string;body:string;type:string;author:string;business?:string;locality?:string;image?:string;source?:string;isDemo?:boolean;updatedAt?:string };
+export type PublicCatalog = { events:PublicEvent[];businesses:PublicBusiness[];offers:PublicOffer[];restaurants:PublicRestaurant[];jobs:PublicJob[];places:PublicPlace[];posts:PublicPost[] };
+export type PublicViewer = { signedIn:boolean;canEdit:boolean;canAdmin:boolean };

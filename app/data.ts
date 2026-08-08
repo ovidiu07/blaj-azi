@@ -1,7 +1,7 @@
 export const routes = [
   ["descopera-blaj", "Descoperă Blaj"], ["evenimente", "Evenimente"], ["afaceri-si-servicii", "Afaceri și servicii"],
   ["oferte-locale", "Oferte locale"], ["unde-mancam", "Unde mâncăm"], ["locuri-de-munca", "Locuri de muncă"],
-  ["informatii-utile", "Informații utile"], ["adauga-o-afacere", "Adaugă o afacere"], ["adauga-un-eveniment", "Adaugă un eveniment"],
+  ["informatii-utile", "Informații utile"], ["povesti-locale", "Povești locale"], ["adauga-o-afacere", "Adaugă o afacere"], ["adauga-un-eveniment", "Adaugă un eveniment"],
   ["adauga-o-oferta", "Adaugă o ofertă"], ["adauga-un-job", "Adaugă un job"], ["contribuie", "Contribuie"],
   ["promovare", "Promovare"], ["despre", "Despre Blaj Azi"], ["contact", "Contact"],
   ["confidentialitate", "Politica de confidențialitate"], ["cookie-uri", "Politica privind cookie-urile"], ["termeni", "Termeni și condiții"],

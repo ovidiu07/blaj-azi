@@ -2,6 +2,8 @@ import type { Metadata } from "next";
 import { headers } from "next/headers";
 import { Cormorant_Garamond, Manrope } from "next/font/google";
 import { SiteFooter, SiteHeader } from "./ui/SiteChrome";
+import { getOptionalAccount, isAdmin } from "./server/platform";
+import { getRuntimeDb } from "../db/runtime";
 import "./globals.css";
 
 const display = Cormorant_Garamond({
@@ -30,14 +32,16 @@ export async function generateMetadata(): Promise<Metadata> {
   };
 }
 
-export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
+export default async function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
+  const account = await getOptionalAccount().catch(() => null);
+  const unread = account ? await getRuntimeDb().prepare("SELECT COUNT(*) count FROM notifications WHERE user_id=? AND read_at IS NULL").bind(account.id).first<{ count: number }>().then(row => row?.count ?? 0).catch(() => 0) : 0;
   return (
     <html lang="ro">
       <body className={`${display.variable} ${sans.variable}`}>
         <a className="skip-link" href="#continut">Sari la conținut</a>
-        <SiteHeader />
+        <SiteHeader account={account ? { displayName: account.displayName, globalRole: account.globalRole, unread } : null} />
         <main id="continut">{children}</main>
-        <SiteFooter />
+        <SiteFooter showAdmin={Boolean(account && isAdmin(account))} />
       </body>
     </html>
   );
