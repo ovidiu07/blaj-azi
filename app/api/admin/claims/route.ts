@@ -35,7 +35,7 @@ export async function POST(request: Request) {
         db.prepare("INSERT INTO business_memberships (business_id,user_id,membership_role,membership_status,invited_by,accepted_at) VALUES (?,?,'owner','active',?,CURRENT_TIMESTAMP) ON CONFLICT(business_id,user_id) DO UPDATE SET membership_role='owner',membership_status='active',accepted_at=CURRENT_TIMESTAMP,revoked_at=NULL").bind(claim.business_id, claim.requester_user_id, account.id),
         db.prepare("UPDATE users SET global_role=CASE WHEN global_role='user' THEN 'business_owner' ELSE global_role END,updated_at=CURRENT_TIMESTAMP WHERE id=?").bind(claim.requester_user_id),
         db.prepare("UPDATE businesses SET moderation_status='approved',status='published',visibility='public',updated_at=CURRENT_TIMESTAMP WHERE id=?").bind(claim.business_id),
-        db.prepare("UPDATE content_records SET status='published',moderation_state='approved',visibility='public',published_by=?,published_at=COALESCE(published_at,CURRENT_TIMESTAMP),updated_at=CURRENT_TIMESTAMP,version=version+1 WHERE type='business' AND entity_id=?").bind(account.id, claim.business_id),
+        db.prepare("UPDATE content_records SET owner_user_id=?,business_id=?,status='published',moderation_state='approved',visibility='public',published_by=?,published_at=COALESCE(published_at,CURRENT_TIMESTAMP),updated_at=CURRENT_TIMESTAMP,version=version+1 WHERE type='business' AND entity_id=?").bind(claim.requester_user_id, claim.business_id, account.id, claim.business_id),
       );
       if(claim.requester_role==="user")statements.push(
         db.prepare("INSERT INTO role_history (user_id,previous_role,new_role,changed_by,reason) VALUES (?,'user','business_owner',?,'Revendicare de afacere aprobată')").bind(claim.requester_user_id,account.id),

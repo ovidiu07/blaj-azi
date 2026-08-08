@@ -57,6 +57,7 @@ type ContentRow = {
   business_id: number | null;
   status: string;
   moderation_state: string;
+  featured: number;
   version: number;
   published_snapshot: string | null;
   deleted_at: string | null;
@@ -221,6 +222,7 @@ export async function contentAction(account: LocalAccount, id: number, action: s
   const row = await db.prepare("SELECT * FROM content_records WHERE id=?").bind(id).first<ContentRow>();
   if (!row) throw new PlatformError(404, "Conținutul nu există.");
   if (!(await canManageEntity(account, id))) throw new PlatformError(403, "Nu poți administra acest conținut.");
+  if(row.deleted_at)throw new PlatformError(409,"Materialul trebuie recuperat înainte de alte acțiuni.");
   const now = "CURRENT_TIMESTAMP";
   let statement: D1PreparedStatement;
   let nextStatus = row.status;
@@ -267,19 +269,24 @@ export async function listMyContent(account: LocalAccount, search = "", status =
 }
 
 export async function getContentForEditor(account: LocalAccount, id: number) {
-  if (!(await canManageEntity(account, id))) throw new PlatformError(403, "Nu poți edita acest conținut.");
-  const db=getRuntimeDb();const row=await db.prepare("SELECT * FROM content_records WHERE id=? AND deleted_at IS NULL").bind(id).first<ContentRow>();if(!row||!row.entity_id)return row;
+  if (!isAdmin(account) && !(await canManageEntity(account, id))) throw new PlatformError(403, "Nu poți edita acest conținut.");
+  const db=getRuntimeDb();const row=await db.prepare(isAdmin(account)?"SELECT * FROM content_records WHERE id=?":"SELECT * FROM content_records WHERE id=? AND deleted_at IS NULL").bind(id).first<ContentRow>();if(!row||!row.entity_id)return row;
   if(postTypes.has(row.type)){const details=await db.prepare("SELECT * FROM posts WHERE id=?").bind(row.entity_id).first<any>();return {...row,body:details?.body||"",locality:details?.locality||"Blaj",sourceUrl:details?.source_information||"",details:details||{}}}
   const tables:Partial<Record<ContentType,string>>={business:"businesses",event:"events",offer:"offers",job:"jobs",restaurant:"restaurants",daily_menu:"daily_menus",place:"places"};const table=tables[row.type];if(!table)return row;const details=await db.prepare(`SELECT * FROM ${table} WHERE id=?`).bind(row.entity_id).first<any>();return {...row,locality:details?.locality||"Blaj",sourceUrl:details?.source_url||"",details:details||{}};
 }
 
-export async function adminModerate(account: LocalAccount, id: number, action: string, note: string) {
+export async function adminModerate(account: LocalAccount, id: number, action: string, note: string, scheduledAt = "") {
   if (!isAdmin(account)) throw new PlatformError(403, "Doar administratorii pot modera.");
   const db = getRuntimeDb();
-  const row = await db.prepare("SELECT * FROM content_records WHERE id=? AND deleted_at IS NULL").bind(id).first<ContentRow>();
+  const row = await db.prepare("SELECT * FROM content_records WHERE id=?").bind(id).first<ContentRow>();
   if (!row) throw new PlatformError(404, "Conținutul nu există.");
-  if (row.owner_user_id === account.id) throw new PlatformError(403, "Nu îți poți modera propriul conținut.");
-  if (["needs_changes", "reject"].includes(action) && !cleanText(note, 2000)) throw new PlatformError(400, "Nota de moderare este obligatorie.");
+  if(row.deleted_at&&action!=="restore_deleted")throw new PlatformError(409,"Materialul trebuie recuperat înainte de alte acțiuni.");
+  if(!row.deleted_at&&action==="restore_deleted")throw new PlatformError(409,"Materialul nu este șters.");
+  if(action==="feature"||action==="unfeature"){
+    const featured=action==="feature"?1:0;await db.batch([db.prepare("UPDATE content_records SET featured=?,updated_at=CURRENT_TIMESTAMP,version=version+1 WHERE id=?").bind(featured,id),db.prepare("INSERT INTO audit_logs (actor_user_id,action,entity_type,entity_id,metadata) VALUES (?,?,?,?,?)").bind(account.id,`content.${action}`,"content",String(id),JSON.stringify({featured:Boolean(featured)}))]);return{id,status:row.status,featured:Boolean(featured),version:row.version+1};
+  }
+  if (["needs_changes", "reject", "soft_delete"].includes(action) && !cleanText(note, 2000)) throw new PlatformError(400, "Nota de moderare este obligatorie.");
+  if (action === "schedule" && !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(scheduledAt)) throw new PlatformError(400, "Alege data și ora publicării.");
   const transitions: Record<string, { status: string; moderation: string; visibility: string }> = {
     approve: { status: "approved", moderation: "approved", visibility: "private" },
     publish: { status: "published", moderation: "approved", visibility: "public" },
@@ -287,6 +294,9 @@ export async function adminModerate(account: LocalAccount, id: number, action: s
     reject: { status: "rejected", moderation: "rejected", visibility: "private" },
     archive: { status: "archived", moderation: "archived", visibility: "private" },
     restore: { status: "published", moderation: "approved", visibility: "public" },
+    schedule: { status: "scheduled", moderation: "approved", visibility: "public" },
+    soft_delete: { status: "soft_deleted", moderation: "soft_deleted", visibility: "private" },
+    restore_deleted: { status: "draft", moderation: "draft", visibility: "private" },
   };
   let target = transitions[action];
   if (!target) throw new PlatformError(400, "Acțiune de moderare neacceptată.");
@@ -310,7 +320,7 @@ export async function adminModerate(account: LocalAccount, id: number, action: s
       .bind(account.id, String(id), JSON.stringify({ action, previousState: row.status, newState: target.status, note: cleanText(note, 2000) || null })),
   ];
   if(pendingRevision){
-    const revisionState=action==="needs_changes"?"needs_changes":action==="reject"?"rejected":"approved";
+    const revisionState=action==="needs_changes"?"needs_changes":["reject","soft_delete"].includes(action)?"rejected":"approved";
     statements.push(db.prepare("UPDATE content_revisions SET moderation_status=?,moderator_id=?,moderator_note=? WHERE id=?").bind(revisionState,account.id,cleanText(note,2000)||null,pendingRevision.id));
     if(revisionInput&&(action==="publish"||action==="approve")){
       const revisionTitle=cleanText(revisionInput.title,240,true);const revisionExcerpt=cleanText(revisionInput.excerpt,600);
@@ -318,10 +328,13 @@ export async function adminModerate(account: LocalAccount, id: number, action: s
       statements.push(typeUpdate(db,{...revisionInput,type:row.type,title:revisionTitle,excerpt:revisionExcerpt},row.entity_id as number,revisionTitle,account));
     }
   }
+  if(action==="soft_delete")statements.push(db.prepare("UPDATE content_records SET deleted_at=CURRENT_TIMESTAMP,deleted_by=?,deletion_reason=? WHERE id=?").bind(account.id,cleanText(note,2000),id));
+  if(action==="restore_deleted")statements.push(db.prepare("UPDATE content_records SET deleted_at=NULL,deleted_by=NULL,deletion_reason=NULL WHERE id=?").bind(id));
+  if(action==="schedule")statements.push(db.prepare("UPDATE content_records SET scheduled_at=? WHERE id=?").bind(cleanText(scheduledAt,40,true),id));
   await db.batch(statements);
   if (row.owner_user_id) {
     const labels: Record<string, [string, string]> = {
-      approve: ["Conținut aprobat", "Materialul a fost aprobat."], publish: ["Conținut publicat", "Materialul este acum public."], needs_changes: ["Sunt necesare modificări", note], reject: ["Conținut respins", note], archive: ["Conținut arhivat", "Un administrator a arhivat materialul."], restore: ["Conținut restaurat", "Materialul este din nou public."],
+      approve: ["Conținut aprobat", "Materialul a fost aprobat."], publish: ["Conținut publicat", "Materialul este acum public."], schedule: ["Publicare programată", `Materialul este programat pentru ${scheduledAt}.`], needs_changes: ["Sunt necesare modificări", note], reject: ["Conținut respins", note], archive: ["Conținut arhivat", "Un administrator a arhivat materialul."], restore: ["Conținut restaurat", "Materialul este din nou public."], soft_delete: ["Conținut eliminat", note], restore_deleted: ["Conținut recuperat", "Materialul a revenit ca ciornă privată."],
     };
     const message = labels[action];
     await notify(row.owner_user_id, `content_${action}`, message[0], message[1], "content", id, `/cont/continut/${id}`);

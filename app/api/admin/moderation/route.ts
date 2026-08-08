@@ -18,9 +18,9 @@ export async function POST(request: Request) {
     assertSameOrigin(request);
     const account = await requireAuthenticatedUser();
     if (!isAdmin(account)) throw new PlatformError(403, "Acces administrativ necesar.");
-    const body = await request.json() as { id?: number; action?: string; note?: string };
+    const body = await request.json() as { id?: number; action?: string; note?: string; scheduledAt?: string };
     const id = Number(body.id);
     if (!Number.isInteger(id) || id <= 0) throw new PlatformError(400, "Identificator invalid.");
-    return Response.json(await adminModerate(account, id, cleanText(body.action, 40, true), cleanText(body.note, 2000)));
+    return Response.json(await adminModerate(account, id, cleanText(body.action, 40, true), cleanText(body.note, 2000), cleanText(body.scheduledAt, 40)));
   } catch (error) { return jsonError(error); }
 }

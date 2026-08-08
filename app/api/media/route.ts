@@ -1,6 +1,6 @@
 import { env } from "cloudflare:workers";
 import { getRuntimeDb } from "../../../db/runtime";
-import { assertSameOrigin, cleanText, enforceRateLimit, isAdmin, jsonError, PlatformError, requireAuthenticatedUser } from "../../server/platform";
+import { assertSameOrigin, canManageEntity, cleanText, enforceRateLimit, isAdmin, jsonError, PlatformError, requireAuthenticatedUser, requireBusinessMembership } from "../../server/platform";
 
 const maxBytes = 8 * 1024 * 1024;
 const formats = {
@@ -42,13 +42,19 @@ export async function POST(request: Request) {
     const bytes = new Uint8Array(await file.arrayBuffer());
     const format = detectImage(bytes);
     if (!format) throw new PlatformError(400, "Sunt acceptate doar imagini JPEG, PNG sau WebP valide.");
-    const altText = cleanText(form.get("altText"), 500);
+    const altText = cleanText(form.get("altText"), 500, true);
+    const businessId = Number(form.get("businessId")) || null;
+    if (businessId) await requireBusinessMembership(account, businessId);
+    const contentId = Number(form.get("contentId")) || null;
+    if (contentId && !(await canManageEntity(account, contentId))) throw new PlatformError(403, "Nu poți atașa imaginea acestui material.");
     const objectKey = `users/${account.id}/${crypto.randomUUID()}.${format.extension}`;
     await env.MEDIA.put(objectKey, bytes, { httpMetadata: { contentType: format.mime }, customMetadata: { originalName: file.name.slice(0, 180), ownerUserId: String(account.id) } });
-    const result = await getRuntimeDb().prepare("INSERT INTO media_assets (r2_key,title,photographer,source_url,license,alt_text,owner_user_id,original_filename,mime_type,size_bytes,approval_status,media_status,orphaned_at) VALUES (?,?,?,?,?,?,?,?,?,?,'pending','active',datetime('now','+7 days'))")
-      .bind(objectKey, cleanText(form.get("title"), 240) || null, cleanText(form.get("photographer"), 240) || null, cleanText(form.get("sourceUrl"), 800) || null, cleanText(form.get("license"), 120) || null, altText || null, account.id, file.name.slice(0, 180), format.mime, file.size).run();
+    const result = await getRuntimeDb().prepare("INSERT INTO media_assets (r2_key,title,photographer,source_url,license,alt_text,owner_user_id,business_id,content_id,original_filename,mime_type,size_bytes,approval_status,media_status,orphaned_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,'pending','active',datetime('now','+7 days'))")
+      .bind(objectKey, cleanText(form.get("title"), 240) || null, cleanText(form.get("photographer"), 240) || null, cleanText(form.get("sourceUrl"), 800) || null, cleanText(form.get("license"), 120) || null, altText, account.id, businessId, contentId, file.name.slice(0, 180), format.mime, file.size).run();
     await getRuntimeDb().prepare("INSERT INTO audit_logs (actor_user_id,action,entity_type,entity_id,metadata) VALUES (?,'media.uploaded','media',?,?)")
       .bind(account.id, String(result.meta.last_row_id), JSON.stringify({ mimeType: format.mime, size: file.size })).run();
     return Response.json({ id: result.meta.last_row_id, key: objectKey, status: "pending" }, { status: 201 });
   } catch (error) { return jsonError(error); }
 }
+
+export async function DELETE(request:Request){try{assertSameOrigin(request);const account=await requireAuthenticatedUser();if(!isAdmin(account))throw new PlatformError(403,"Acces administrativ necesar.");const db=getRuntimeDb();const rows=await db.prepare("SELECT id,r2_key FROM media_assets WHERE media_status='active' AND approval_status='pending' AND orphaned_at IS NOT NULL AND datetime(orphaned_at)<=CURRENT_TIMESTAMP LIMIT 100").all<{id:number;r2_key:string}>();for(const row of rows.results)await env.MEDIA.delete(row.r2_key);if(rows.results.length)await db.batch(rows.results.map(row=>db.prepare("UPDATE media_assets SET media_status='soft_deleted',archived_at=CURRENT_TIMESTAMP WHERE id=?").bind(row.id)));await db.prepare("INSERT INTO audit_logs (actor_user_id,action,entity_type,metadata) VALUES (?,'media.orphans_cleaned','media',?)").bind(account.id,JSON.stringify({count:rows.results.length})).run();return Response.json({removed:rows.results.length})}catch(error){return jsonError(error)}}

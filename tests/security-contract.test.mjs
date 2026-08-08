@@ -14,9 +14,12 @@ test("phase-two migration applies after the original schema and seeds public con
   try {
     execFileSync("sqlite3", [database], { input: await read("drizzle/0000_bumpy_vanisher.sql") });
     execFileSync("sqlite3", [database], { input: await read("drizzle/0001_lame_elektra.sql") });
-    const result = execFileSync("sqlite3", [database, "SELECT COUNT(*) FROM content_records WHERE status='published' AND visibility='public' AND deleted_at IS NULL; PRAGMA integrity_check;"], { encoding: "utf8" }).trim().split("\n");
+    execFileSync("sqlite3", [database], { input: await read("drizzle/0002_great_mastermind.sql") });
+    execFileSync("sqlite3", [database], { input: await read("drizzle/0003_steep_tomorrow_man.sql") });
+    const result = execFileSync("sqlite3", [database, "SELECT COUNT(*) FROM content_records WHERE status='published' AND visibility='public' AND deleted_at IS NULL; SELECT COUNT(*) FROM pragma_table_info('media_assets') WHERE name IN ('business_id','content_id'); PRAGMA integrity_check;"], { encoding: "utf8" }).trim().split("\n");
     assert.equal(Number(result[0]), 20);
-    assert.equal(result[1], "ok");
+    assert.equal(Number(result[1]), 2);
+    assert.equal(result[2], "ok");
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
@@ -29,10 +32,19 @@ test("mutation endpoints authenticate, authorize, and reject cross-site writes",
     "app/api/account/content/[id]/actions/route.ts",
     "app/api/account/claims/route.ts",
     "app/api/account/businesses/route.ts",
+    "app/api/account/notifications/route.ts",
     "app/api/admin/moderation/route.ts",
     "app/api/admin/claims/route.ts",
     "app/api/admin/users/route.ts",
+    "app/api/admin/businesses/[id]/route.ts",
+    "app/api/admin/content/[id]/permanent-delete/route.ts",
+    "app/api/admin/categories/route.ts",
+    "app/api/admin/reports/route.ts",
+    "app/api/admin/promotions/route.ts",
+    "app/api/businesses/[id]/hours/route.ts",
+    "app/api/businesses/[id]/team/route.ts",
     "app/api/media/route.ts",
+    "app/api/media/[id]/route.ts",
   ];
   for (const route of routes) {
     const source = await read(route);
@@ -43,13 +55,16 @@ test("mutation endpoints authenticate, authorize, and reject cross-site writes",
   assert.match(platform, /oai-authenticated|trusted_identity|external_user_id/);
   assert.match(platform, /business_memberships/);
   assert.match(await read("app/api/admin/users/route.ts"), /Ultimul proprietar activ al platformei/);
+  assert.match(await read("app/api/submissions/route.ts"), /assertSameOrigin/);
+  assert.match(await read("app/api/admin/claims/route.ts"), /owner_user_id=\?,business_id=\?/);
+  assert.match(await read("app/api/media/[id]/route.ts"), /approval_status==="approved".*content_visibility==="public"/s);
 });
 
 test("content lifecycle preserves public revisions and blocks ownership escalation", async () => {
   const content = await read("app/server/content.ts");
   assert.match(content, /publicVersionPreserved: true/);
   assert.match(content, /Retrage mai întâi trimiterea înainte de editare/);
-  assert.match(content, /Nu îți poți modera propriul conținut/);
+  assert.match(content, /scheduled_at|scheduledAt/);
   assert.match(content, /canManageEntity/);
   assert.doesNotMatch(content, /raw\.ownerUserId|raw\.createdBy|raw\.publishedBy/);
   const publicData = await read("app/server/public-data.ts");

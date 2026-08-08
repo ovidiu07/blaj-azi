@@ -1,6 +1,6 @@
 import { env } from "cloudflare:workers";
 import { getRuntimeDb } from "../../../db/runtime";
-import { getOptionalAccount } from "../../server/platform";
+import { assertSameOrigin, getOptionalAccount } from "../../server/platform";
 
 const allowedTypes = new Set(["business", "event", "offer", "job", "contribution", "contact", "promotion", "newsletter"]);
 function validImage(bytes: Uint8Array) {
@@ -12,6 +12,7 @@ function validImage(bytes: Uint8Array) {
 
 export async function POST(request: Request) {
   try {
+    assertSameOrigin(request);
     const form = await request.formData();
     const type = String(form.get("type") || "");
     const email = String(form.get("email") || "").trim().slice(0, 200);
