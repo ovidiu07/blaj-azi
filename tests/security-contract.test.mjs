@@ -16,10 +16,12 @@ test("phase-two migration applies after the original schema and seeds public con
     execFileSync("sqlite3", [database], { input: await read("drizzle/0001_lame_elektra.sql") });
     execFileSync("sqlite3", [database], { input: await read("drizzle/0002_great_mastermind.sql") });
     execFileSync("sqlite3", [database], { input: await read("drizzle/0003_steep_tomorrow_man.sql") });
-    const result = execFileSync("sqlite3", [database, "SELECT COUNT(*) FROM content_records WHERE status='published' AND visibility='public' AND deleted_at IS NULL; SELECT COUNT(*) FROM pragma_table_info('media_assets') WHERE name IN ('business_id','content_id'); PRAGMA integrity_check;"], { encoding: "utf8" }).trim().split("\n");
+    execFileSync("sqlite3", [database], { input: await read("drizzle/0004_curved_meggan.sql") });
+    const result = execFileSync("sqlite3", [database, "SELECT COUNT(*) FROM content_records WHERE status='published' AND visibility='public' AND deleted_at IS NULL; SELECT COUNT(*) FROM pragma_table_info('media_assets') WHERE name IN ('business_id','content_id'); SELECT COUNT(*) FROM sqlite_schema WHERE type='table' AND name IN ('auth_identities','password_credentials','auth_sessions','auth_attempts'); PRAGMA integrity_check;"], { encoding: "utf8" }).trim().split("\n");
     assert.equal(Number(result[0]), 20);
     assert.equal(Number(result[1]), 2);
-    assert.equal(result[2], "ok");
+    assert.equal(Number(result[2]), 4);
+    assert.equal(result[3], "ok");
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
@@ -51,9 +53,17 @@ test("mutation endpoints authenticate, authorize, and reject cross-site writes",
     assert.match(source, /requireAuthenticatedUser/);
     assert.match(source, /assertSameOrigin/);
   }
+  for (const route of ["app/api/auth/register/route.ts", "app/api/auth/login/route.ts", "app/api/auth/logout/route.ts"]) {
+    assert.match(await read(route), /assertSameOrigin/);
+  }
   const platform = await read("app/server/platform.ts");
   assert.match(platform, /oai-authenticated|trusted_identity|external_user_id/);
   assert.match(platform, /business_memberships/);
+  const auth = await read("app/server/auth.ts");
+  assert.match(auth, /PBKDF2.*SHA-256/s);
+  assert.match(auth, /token_hash/);
+  assert.match(auth, /global_role.*'user'/s);
+  assert.doesNotMatch(auth, /input\.(role|globalRole|ownerUserId|membershipId)/);
   assert.match(await read("app/api/admin/users/route.ts"), /Ultimul proprietar activ al platformei/);
   assert.match(await read("app/api/submissions/route.ts"), /assertSameOrigin/);
   assert.match(await read("app/api/admin/claims/route.ts"), /owner_user_id=\?,business_id=\?/);

@@ -1,6 +1,9 @@
 import { env } from "cloudflare:workers";
-import { getChatGPTUser, requireChatGPTUser } from "../chatgpt-auth";
+import { cookies } from "next/headers";
+import { redirect } from "next/navigation";
+import { getChatGPTUser } from "../chatgpt-auth";
 import { getRuntimeDb } from "../../db/runtime";
+import { AuthError, AuthUserRow, normalizeEmailAddress, resolveSessionToken, safeReturnPath, SECURE_SESSION_COOKIE, SESSION_COOKIE } from "./auth";
 
 export const globalRoles = ["user", "business_owner", "admin", "platform_owner"] as const;
 export type GlobalRole = (typeof globalRoles)[number];
@@ -29,18 +32,7 @@ export class PlatformError extends Error {
   }
 }
 
-type UserRow = {
-  id: number;
-  external_user_id: string;
-  email: string;
-  normalized_email: string;
-  display_name: string;
-  avatar_url: string | null;
-  global_role: GlobalRole;
-  account_status: AccountStatus;
-  created_at: string;
-  last_login_at: string;
-};
+type UserRow = AuthUserRow;
 
 function mapUser(row: UserRow): LocalAccount {
   return {
@@ -58,7 +50,7 @@ function mapUser(row: UserRow): LocalAccount {
 }
 
 export function normalizeEmail(email: string): string {
-  return email.trim().toLocaleLowerCase("ro-RO");
+  return normalizeEmailAddress(email);
 }
 
 async function persistIdentity(identity: Awaited<ReturnType<typeof getChatGPTUser>>): Promise<LocalAccount | null> {
@@ -66,11 +58,12 @@ async function persistIdentity(identity: Awaited<ReturnType<typeof getChatGPTUse
   const db = getRuntimeDb();
   const normalizedEmail = normalizeEmail(identity.email);
   const existing = await db
-    .prepare("SELECT * FROM users WHERE external_user_id = ? OR normalized_email = ? LIMIT 1")
-    .bind(identity.userId, normalizedEmail)
+    .prepare("SELECT * FROM users WHERE external_user_id = ? LIMIT 1")
+    .bind(identity.userId)
     .first<UserRow>();
 
-  if (existing && existing.external_user_id !== identity.userId) {
+  const emailOwner = !existing ? await db.prepare("SELECT id FROM users WHERE normalized_email=? LIMIT 1").bind(normalizedEmail).first<{ id: number }>() : null;
+  if (emailOwner) {
     throw new PlatformError(409, "Adresa de e-mail este deja legată de o altă identitate.", "identity_conflict");
   }
 
@@ -81,15 +74,20 @@ async function persistIdentity(identity: Awaited<ReturnType<typeof getChatGPTUse
       .first<{ id: number }>();
     const role: GlobalRole = !owner && bootstrapEmail && bootstrapEmail === normalizedEmail ? "platform_owner" : "user";
     await db.batch([
-      db.prepare("INSERT INTO users (external_user_id,email,normalized_email,display_name,global_role,account_status) VALUES (?,?,?,?,?,'active')")
+      db.prepare("INSERT INTO users (external_user_id,email,normalized_email,display_name,global_role,account_status,email_verified_at) VALUES (?,?,?,?,?,'active',CURRENT_TIMESTAMP)")
         .bind(identity.userId, identity.email.trim(), normalizedEmail, identity.displayName.slice(0, 180), role),
+      db.prepare("INSERT INTO auth_identities (user_id,provider,provider_subject,provider_email,email_verified) SELECT id,'chatgpt',?,?,1 FROM users WHERE external_user_id=?")
+        .bind(identity.userId, identity.email.trim(), identity.userId),
       db.prepare("INSERT INTO audit_logs (actor_user_id,action,entity_type,entity_id,metadata) VALUES (NULL,'account.created','user',NULL,?)")
         .bind(JSON.stringify({ role, source: "trusted_identity" })),
     ]);
   } else {
-    await db.prepare("UPDATE users SET email=?, normalized_email=?, display_name=COALESCE(?,display_name), updated_at=CURRENT_TIMESTAMP, last_login_at=CURRENT_TIMESTAMP WHERE id=?")
-      .bind(identity.email.trim(), normalizedEmail, identity.fullName?.slice(0, 180) ?? null, existing.id)
-      .run();
+    await db.batch([
+      db.prepare("UPDATE users SET email=?, normalized_email=?, display_name=COALESCE(?,display_name), email_verified_at=COALESCE(email_verified_at,CURRENT_TIMESTAMP), updated_at=CURRENT_TIMESTAMP, last_login_at=CURRENT_TIMESTAMP WHERE id=?")
+        .bind(identity.email.trim(), normalizedEmail, identity.fullName?.slice(0, 180) ?? null, existing.id),
+      db.prepare("INSERT INTO auth_identities (user_id,provider,provider_subject,provider_email,email_verified,last_used_at) VALUES (?,'chatgpt',?,?,1,CURRENT_TIMESTAMP) ON CONFLICT(provider,provider_subject) DO UPDATE SET provider_email=excluded.provider_email,email_verified=1,last_used_at=CURRENT_TIMESTAMP")
+        .bind(existing.id, identity.userId, identity.email.trim()),
+    ]);
   }
 
   const row = await db.prepare("SELECT * FROM users WHERE external_user_id=? LIMIT 1").bind(identity.userId).first<UserRow>();
@@ -102,13 +100,18 @@ async function persistIdentity(identity: Awaited<ReturnType<typeof getChatGPTUse
 }
 
 export async function getOptionalAccount(): Promise<LocalAccount | null> {
+  const cookieStore = await cookies();
+  const token = cookieStore.get(SECURE_SESSION_COOKIE)?.value || cookieStore.get(SESSION_COOKIE)?.value;
+  if (token) {
+    const sessionAccount = await resolveSessionToken(token).catch(() => null);
+    if (sessionAccount) return mapUser(sessionAccount);
+  }
   return persistIdentity(await getChatGPTUser());
 }
 
-export async function requireAccountForPage(returnTo: string): Promise<LocalAccount> {
-  await requireChatGPTUser(returnTo);
+export async function requireAccountForPage(returnTo: string, loginPath = "/conectare"): Promise<LocalAccount> {
   const account = await getOptionalAccount();
-  if (!account) throw new PlatformError(401, "Autentificare necesară.");
+  if (!account) redirect(`${loginPath}?return_to=${encodeURIComponent(safeReturnPath(returnTo, "/"))}`);
   assertActive(account);
   return account;
 }
@@ -198,6 +201,7 @@ export async function enforceRateLimit(account: LocalAccount, auditAction: strin
 }
 
 export function jsonError(error: unknown): Response {
+  if (error instanceof AuthError) return Response.json({ error: error.message, code: error.code }, { status: error.status });
   if (error instanceof PlatformError) return Response.json({ error: error.message, code: error.code }, { status: error.status });
   console.error("platform_request_failed", error instanceof Error ? error.message : "unknown");
   return Response.json({ error: "Nu am putut finaliza operațiunea." }, { status: 500 });

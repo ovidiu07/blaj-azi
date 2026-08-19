@@ -45,3 +45,28 @@ test("includes durable-data, moderation, SEO, and media foundations", async () =
   await access(new URL("../public/og.png", import.meta.url));
   await access(new URL("../drizzle/0000_bumpy_vanisher.sql", import.meta.url));
 });
+
+test("renders first-party auth pages and protects account and admin routes", async () => {
+  const login = await render("/conectare?return_to=%2Fcont");
+  assert.equal(login.status, 200);
+  assert.match(await login.text(), /Bine ai revenit|Conectează-te/);
+  const registration = await render("/inregistrare");
+  assert.equal(registration.status, 200);
+  assert.match(await registration.text(), /Creează un cont Blaj Azi/);
+  const account = await render("/cont");
+  assert.equal(account.status, 307);
+  assert.match(account.headers.get("location") ?? "", /^\/conectare\?return_to=/);
+  const admin = await render("/admin");
+  assert.equal(admin.status, 307);
+  assert.match(admin.headers.get("location") ?? "", /^\/admin\/conectare\?return_to=/);
+  const compatibility = await render("/signin-with-chatgpt?return_to=%2Fcont");
+  assert.equal(compatibility.status, 307);
+  assert.match(compatibility.headers.get("location") ?? "", /^\/conectare\?return_to=/);
+});
+
+test("keeps representative public routes renderable", async () => {
+  for (const path of ["/descopera-blaj", "/descopera-blaj/campia-libertatii", "/evenimente", "/evenimente/atelier-micilor-exploratori", "/afaceri-si-servicii", "/oferte-locale", "/unde-mancam", "/locuri-de-munca", "/povesti-locale", "/informatii-utile", "/promovare", "/adauga-o-afacere"]) {
+    const response = await render(path);
+    assert.equal(response.status, 200, path);
+  }
+});

@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { Bell, ChevronDown, LogIn, LogOut, Menu, Plus, Search, UserRound, X } from "lucide-react";
-import { useEffect, useState } from "react";
+import { Dispatch, RefObject, SetStateAction, useEffect, useRef, useState } from "react";
 
 type HeaderAccount = { displayName: string; globalRole: string; unread: number } | null;
 
@@ -18,6 +18,12 @@ export function Logo() {
 export function SiteHeader({ account }: { account: HeaderAccount }) {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState(false);
+  const menuTrigger = useRef<HTMLButtonElement>(null);
+  const menuDialog = useRef<HTMLDivElement>(null);
+  const searchTrigger = useRef<HTMLButtonElement>(null);
+  const searchDialog = useRef<HTMLDivElement>(null);
+  useDialogFocus(open, setOpen, menuTrigger, menuDialog);
+  useDialogFocus(search, setSearch, searchTrigger, searchDialog);
   useEffect(() => { document.body.style.overflow = open || search ? "hidden" : ""; return () => { document.body.style.overflow = ""; }; }, [open, search]);
   return (
     <>
@@ -29,18 +35,18 @@ export function SiteHeader({ account }: { account: HeaderAccount }) {
             <Link href="/povesti-locale">Povești</Link>
           </nav>
           <div className="header-actions">
-            <button className="icon-button" aria-label="Deschide căutarea" onClick={() => setSearch(true)}><Search size={20} /></button>
-            {account ? <details className="account-menu"><summary aria-label="Deschide meniul contului"><span className="account-avatar">{initials(account.displayName)}</span><span className="account-name">{account.displayName}</span>{account.unread > 0 && <span className="notification-count" aria-label={`${account.unread} notificări necitite`}>{account.unread}</span>}<ChevronDown size={15} /></summary><div className="account-popover"><strong>{account.displayName}</strong><small>{roleLabel(account.globalRole)}</small><Link href="/cont"><UserRound /> Contul meu</Link><Link href="/cont/continut">Conținutul meu</Link>{["business_owner","admin","platform_owner"].includes(account.globalRole) && <Link href="/cont/afaceri">Afacerea mea</Link>}{["admin","platform_owner"].includes(account.globalRole) && <Link href="/admin">Administrare</Link>}<Link href="/cont/notificari"><Bell /> Notificări {account.unread > 0 && `(${account.unread})`}</Link><Link href="/signout-with-chatgpt?return_to=%2F"><LogOut /> Deconectare</Link></div></details> : <Link className="signin-link" href="/signin-with-chatgpt?return_to=%2Fcont"><LogIn size={17} /> Conectează-te</Link>}
+            <button ref={searchTrigger} className="icon-button" aria-label="Deschide căutarea" aria-expanded={search} onClick={() => setSearch(true)}><Search size={20} /></button>
+            {account ? <details className="account-menu"><summary aria-label="Deschide meniul contului"><span className="account-avatar">{initials(account.displayName)}</span><span className="account-name">{account.displayName}</span>{account.unread > 0 && <span className="notification-count" aria-label={`${account.unread} notificări necitite`}>{account.unread}</span>}<ChevronDown size={15} /></summary><div className="account-popover"><strong>{account.displayName}</strong><small>{roleLabel(account.globalRole)}</small><Link href="/cont"><UserRound /> Contul meu</Link><Link href="/cont/continut">Conținutul meu</Link>{["business_owner","admin","platform_owner"].includes(account.globalRole) && <Link href="/cont/afaceri">Afacerea mea</Link>}{["admin","platform_owner"].includes(account.globalRole) && <Link href="/admin">Administrare</Link>}<Link href="/cont/notificari"><Bell /> Notificări {account.unread > 0 && `(${account.unread})`}</Link><Link href="/deconectare"><LogOut /> Deconectare</Link></div></details> : <div className="guest-actions"><Link className="register-link" href="/inregistrare?return_to=%2Fcont">Înregistrare</Link><Link className="signin-link" href="/conectare?return_to=%2Fcont"><LogIn size={17} /> Conectează-te</Link></div>}
             <Link className="button button-small" href="/adauga-o-afacere"><Plus size={17} /> Adaugă</Link>
-            <button className="icon-button menu-button" aria-label="Deschide meniul" aria-expanded={open} onClick={() => setOpen(true)}><Menu size={22} /></button>
+            <button ref={menuTrigger} className="icon-button menu-button" aria-label="Deschide meniul" aria-expanded={open} onClick={() => setOpen(true)}><Menu size={22} /></button>
           </div>
         </div>
       </header>
-      {open && <div className="overlay-panel" role="dialog" aria-modal="true" aria-label="Meniu">
+      {open && <div ref={menuDialog} className="overlay-panel" role="dialog" aria-modal="true" aria-label="Meniu">
         <div className="overlay-top"><Logo /><button className="icon-button" aria-label="Închide meniul" onClick={() => setOpen(false)}><X /></button></div>
-        <nav className="mobile-nav">{mainNav.map(([href, label]) => <Link key={href} href={href} onClick={() => setOpen(false)}>{label}</Link>)}<Link href="/povesti-locale" onClick={() => setOpen(false)}>Povești locale</Link><Link href="/informatii-utile" onClick={() => setOpen(false)}>Informații utile</Link><Link href="/despre" onClick={() => setOpen(false)}>Despre</Link><span className="mobile-nav-divider" />{account ? <><Link href="/cont" onClick={() => setOpen(false)}>Contul meu</Link><Link href="/cont/continut" onClick={() => setOpen(false)}>Conținutul meu</Link>{["business_owner","admin","platform_owner"].includes(account.globalRole) && <Link href="/cont/afaceri" onClick={() => setOpen(false)}>Afacerea mea</Link>}{["admin","platform_owner"].includes(account.globalRole) && <Link href="/admin" onClick={() => setOpen(false)}>Administrare</Link>}<Link href="/signout-with-chatgpt?return_to=%2F" onClick={() => setOpen(false)}>Deconectare</Link></> : <Link href="/signin-with-chatgpt?return_to=%2Fcont" onClick={() => setOpen(false)}>Conectează-te</Link>}</nav>
+        <nav className="mobile-nav">{mainNav.map(([href, label]) => <Link key={href} href={href} onClick={() => setOpen(false)}>{label}</Link>)}<Link href="/povesti-locale" onClick={() => setOpen(false)}>Povești locale</Link><Link href="/informatii-utile" onClick={() => setOpen(false)}>Informații utile</Link><Link href="/despre" onClick={() => setOpen(false)}>Despre</Link><span className="mobile-nav-divider" />{account ? <><Link href="/cont" onClick={() => setOpen(false)}>Contul meu</Link><Link href="/cont/continut" onClick={() => setOpen(false)}>Conținutul meu</Link>{["business_owner","admin","platform_owner"].includes(account.globalRole) && <Link href="/cont/afaceri" onClick={() => setOpen(false)}>Afacerea mea</Link>}{["admin","platform_owner"].includes(account.globalRole) && <Link href="/admin" onClick={() => setOpen(false)}>Administrare</Link>}<Link href="/deconectare" onClick={() => setOpen(false)}>Deconectare</Link></> : <><Link href="/conectare?return_to=%2Fcont" onClick={() => setOpen(false)}>Conectează-te</Link><Link href="/inregistrare?return_to=%2Fcont" onClick={() => setOpen(false)}>Înregistrare</Link></>}</nav>
       </div>}
-      {search && <div className="search-overlay" role="dialog" aria-modal="true" aria-label="Căutare în site">
+      {search && <div ref={searchDialog} className="search-overlay" role="dialog" aria-modal="true" aria-label="Căutare în site">
         <button className="icon-button search-close" aria-label="Închide căutarea" onClick={() => setSearch(false)}><X /></button>
         <div className="search-dialog"><p className="eyebrow">Caută în ghidul local</p><h2>Ce cauți în Blaj?</h2><form action="/cauta"><Search /><input name="q" aria-label="Termen de căutare" placeholder="restaurant, electrician, eveniment…" /><button className="button" type="submit">Caută</button></form><div className="search-suggestions"><span>Căutări rapide:</span><Link href="/unde-mancam">meniul zilei</Link><Link href="/evenimente">weekend</Link><Link href="/locuri-de-munca">joburi</Link></div></div>
       </div>}
@@ -54,3 +60,37 @@ export function SiteFooter({ showAdmin = false }: { showAdmin?: boolean }) {
 
 function initials(name: string) { return name.split(/\s+/).slice(0, 2).map(part => part[0]?.toUpperCase()).join("") || "U"; }
 function roleLabel(role: string) { return role === "business_owner" ? "Proprietar de afacere" : role === "admin" ? "Administrator" : role === "platform_owner" ? "Proprietar platformă" : "Utilizator"; }
+
+function useDialogFocus(
+  open: boolean,
+  setOpen: Dispatch<SetStateAction<boolean>>,
+  trigger: RefObject<HTMLButtonElement | null>,
+  dialog: RefObject<HTMLDivElement | null>,
+) {
+  useEffect(() => {
+    if (!open || !dialog.current) return;
+    const panel = dialog.current;
+    const triggerElement = trigger.current;
+    const focusable = () => Array.from(panel.querySelectorAll<HTMLElement>('a[href],button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])'));
+    focusable()[0]?.focus();
+    function keydown(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        setOpen(false);
+        return;
+      }
+      if (event.key !== "Tab") return;
+      const items = focusable();
+      if (!items.length) return;
+      const first = items[0];
+      const last = items[items.length - 1];
+      if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
+      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+    }
+    panel.addEventListener("keydown", keydown);
+    return () => {
+      panel.removeEventListener("keydown", keydown);
+      triggerElement?.focus();
+    };
+  }, [dialog, open, setOpen, trigger]);
+}

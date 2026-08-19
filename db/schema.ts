@@ -32,6 +32,9 @@ export const users = sqliteTable(
     createdAt: text("created_at").notNull().default(now),
     updatedAt: text("updated_at").notNull().default(now),
     lastLoginAt: text("last_login_at").notNull().default(now),
+    emailVerifiedAt: text("email_verified_at"),
+    termsAcceptedAt: text("terms_accepted_at"),
+    privacyAcceptedAt: text("privacy_accepted_at"),
     suspendedAt: text("suspended_at"),
     suspensionReason: text("suspension_reason"),
   },
@@ -40,6 +43,69 @@ export const users = sqliteTable(
     uniqueIndex("users_normalized_email_unique").on(table.normalizedEmail),
     index("idx_users_role_status").on(table.globalRole, table.accountStatus),
   ],
+);
+
+export const authIdentities = sqliteTable(
+  "auth_identities",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    userId: integer("user_id").notNull(),
+    provider: text("provider").notNull(),
+    providerSubject: text("provider_subject").notNull(),
+    providerEmail: text("provider_email"),
+    emailVerified: integer("email_verified", { mode: "boolean" }).notNull().default(false),
+    createdAt: text("created_at").notNull().default(now),
+    lastUsedAt: text("last_used_at").notNull().default(now),
+  },
+  (table) => [
+    uniqueIndex("auth_identities_provider_subject_unique").on(table.provider, table.providerSubject),
+    index("idx_auth_identities_user").on(table.userId),
+  ],
+);
+
+export const passwordCredentials = sqliteTable(
+  "password_credentials",
+  {
+    userId: integer("user_id").primaryKey(),
+    hashVersion: text("hash_version").notNull(),
+    passwordHash: text("password_hash").notNull(),
+    salt: text("salt").notNull(),
+    iterations: integer("iterations").notNull(),
+    createdAt: text("created_at").notNull().default(now),
+    updatedAt: text("updated_at").notNull().default(now),
+  },
+);
+
+export const authSessions = sqliteTable(
+  "auth_sessions",
+  {
+    id: text("id").primaryKey(),
+    userId: integer("user_id").notNull(),
+    tokenHash: text("token_hash").notNull(),
+    expiresAt: text("expires_at").notNull(),
+    createdAt: text("created_at").notNull().default(now),
+    lastSeenAt: text("last_seen_at").notNull().default(now),
+    revokedAt: text("revoked_at"),
+    remember: integer("remember", { mode: "boolean" }).notNull().default(false),
+    userAgentHash: text("user_agent_hash"),
+  },
+  (table) => [
+    uniqueIndex("auth_sessions_token_hash_unique").on(table.tokenHash),
+    index("idx_auth_sessions_user_active").on(table.userId, table.revokedAt, table.expiresAt),
+    index("idx_auth_sessions_expiry").on(table.expiresAt),
+  ],
+);
+
+export const authAttempts = sqliteTable(
+  "auth_attempts",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    action: text("action").notNull(),
+    fingerprint: text("fingerprint").notNull(),
+    succeeded: integer("succeeded", { mode: "boolean" }).notNull().default(false),
+    createdAt: text("created_at").notNull().default(now),
+  },
+  (table) => [index("idx_auth_attempts_window").on(table.action, table.fingerprint, table.createdAt)],
 );
 
 export const categories = sqliteTable("categories", {
