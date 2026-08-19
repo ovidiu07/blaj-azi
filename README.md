@@ -27,8 +27,8 @@ Schema D1 este definită în `db/schema.ts`, iar migrările versionate sunt în
 `drizzle/`. Ele sunt singura sursă pentru crearea schemei și datele demo.
 
 Identitatea este rezolvată pe server dintr-o sesiune opacă proprie sau din
-headerele de încredere furnizate de platformă. Parolele folosesc PBKDF2-SHA-256
-cu parametri versionați, iar D1 păstrează numai hash-ul tokenului de sesiune.
+headerele de încredere furnizate de platformă. Parolele folosesc scrypt cu
+parametri versionați, iar D1 păstrează numai hash-ul tokenului de sesiune.
 `ADMIN_EMAIL` rămâne rezervat bootstrap-ului găzduit de încredere și nu
 promovează niciodată o înregistrare publică.
 

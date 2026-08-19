@@ -60,7 +60,8 @@ test("mutation endpoints authenticate, authorize, and reject cross-site writes",
   assert.match(platform, /oai-authenticated|trusted_identity|external_user_id/);
   assert.match(platform, /business_memberships/);
   const auth = await read("app/server/auth.ts");
-  assert.match(auth, /PBKDF2.*SHA-256/s);
+  assert.match(auth, /PASSWORD_HASH_VERSION = "scrypt-v1"/);
+  assert.match(auth, /scryptCallback/);
   assert.match(auth, /token_hash/);
   assert.match(auth, /global_role.*'user'/s);
   assert.doesNotMatch(auth, /input\.(role|globalRole|ownerUserId|membershipId)/);

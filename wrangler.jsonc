@@ -1,0 +1,52 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+
+  "name": "blaj-azi",
+  "account_id": "f9189342738b37e8784ebb1f2865a545",
+
+  "main": "./worker/index.ts",
+  "compatibility_date": "2026-08-19",
+  "compatibility_flags": ["nodejs_compat"],
+
+  "workers_dev": true,
+
+  "assets": {
+    "directory": "dist/client",
+    "binding": "ASSETS",
+    "not_found_handling": "none"
+  },
+
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "blaj-azi-production",
+      "database_id": "d3f08182-7079-432a-87b8-06ea85ab5e89",
+      "migrations_dir": "drizzle"
+    }
+  ],
+
+  "r2_buckets": [
+    {
+      "binding": "MEDIA",
+      "bucket_name": "blaj-azi-media"
+    }
+  ],
+
+  "images": {
+    "binding": "IMAGES"
+  },
+
+  "observability": {
+    "enabled": true
+  },
+  "routes": [
+    {
+      "pattern": "blaj-azi.ro",
+      "custom_domain": true
+    },
+    {
+      "pattern": "www.blaj-azi.ro",
+      "custom_domain": true
+    }
+  ]
+}

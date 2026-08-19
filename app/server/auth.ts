@@ -1,12 +1,20 @@
+import { scrypt as scryptCallback } from "node:crypto";
 import { getRuntimeDb } from "../../db/runtime";
 
-export const PASSWORD_HASH_VERSION = "pbkdf2-sha256-v1";
-export const PASSWORD_ITERATIONS = 600_000;
+export const PASSWORD_HASH_VERSION = "scrypt-v1";
+export const PASSWORD_COST = 16_384;
 export const SESSION_COOKIE = "blaj_session";
 export const SECURE_SESSION_COOKIE = "__Host-blaj_session";
 
 const encoder = new TextEncoder();
 const dummySalt = "Ymxhai1hemlfZHVtbXlfc2FsdA";
+const legacyPasswordHashVersion = "pbkdf2-sha256-v1";
+const maxLegacyPbkdf2Iterations = 100_000;
+const scryptBlockSize = 8;
+const scryptParallelization = 1;
+const scryptKeyLength = 32;
+const scryptMaxMemory = 32 * 1024 * 1024;
+const maxSupportedScryptCost = 32_768;
 const authPaths = new Set([
   "/conectare",
   "/inregistrare",
@@ -64,30 +72,59 @@ export function safeReturnPath(value: unknown, fallback = "/"): string {
   }
 }
 
-export async function hashPassword(password: string, iterations = PASSWORD_ITERATIONS) {
+export async function hashPassword(password: string, cost = PASSWORD_COST) {
+  if (!isSupportedScryptCost(cost)) throw new Error("Unsupported scrypt cost.");
   const salt = crypto.getRandomValues(new Uint8Array(16));
   return {
     hashVersion: PASSWORD_HASH_VERSION,
-    passwordHash: toBase64Url(await derivePassword(password, salt, iterations)),
+    passwordHash: toBase64Url(await deriveScryptPassword(password, salt, cost)),
     salt: toBase64Url(salt),
-    iterations,
+    iterations: cost,
   };
 }
 
 export async function verifyPassword(password: string, credential?: Pick<CredentialRow, "hash_version" | "password_hash" | "salt" | "iterations"> | null) {
-  const supported = credential?.hash_version === PASSWORD_HASH_VERSION;
-  const salt = fromBase64Url(supported ? credential.salt : dummySalt);
-  const iterations = supported ? credential.iterations : PASSWORD_ITERATIONS;
-  const expected = fromBase64Url(supported ? credential.password_hash : "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
-  const actual = await derivePassword(password, salt, iterations);
-  return supported && constantTimeEqual(actual, expected);
+  try {
+    if (credential?.hash_version === PASSWORD_HASH_VERSION && isSupportedScryptCost(credential.iterations)) {
+      const actual = await deriveScryptPassword(password, fromBase64Url(credential.salt), credential.iterations);
+      return constantTimeEqual(actual, fromBase64Url(credential.password_hash));
+    }
+    if (credential?.hash_version === legacyPasswordHashVersion && isSupportedLegacyPbkdf2Iterations(credential.iterations)) {
+      const actual = await deriveLegacyPbkdf2Password(password, fromBase64Url(credential.salt), credential.iterations);
+      return constantTimeEqual(actual, fromBase64Url(credential.password_hash));
+    }
+  } catch {
+    // Treat malformed or unsupported stored credentials exactly like invalid credentials.
+  }
+  await deriveScryptPassword(password, fromBase64Url(dummySalt), PASSWORD_COST);
+  return false;
 }
 
-async function derivePassword(password: string, salt: Uint8Array, iterations: number): Promise<Uint8Array> {
+function deriveScryptPassword(password: string, salt: Uint8Array, cost: number): Promise<Uint8Array> {
+  return new Promise((resolve, reject) => {
+    scryptCallback(
+      password,
+      salt,
+      scryptKeyLength,
+      { N: cost, r: scryptBlockSize, p: scryptParallelization, maxmem: scryptMaxMemory },
+      (error, derivedKey) => error ? reject(error) : resolve(new Uint8Array(derivedKey)),
+    );
+  });
+}
+
+async function deriveLegacyPbkdf2Password(password: string, salt: Uint8Array, iterations: number): Promise<Uint8Array> {
   const key = await crypto.subtle.importKey("raw", encoder.encode(password), "PBKDF2", false, ["deriveBits"]);
   const saltBuffer = new Uint8Array(salt).buffer;
   const bits = await crypto.subtle.deriveBits({ name: "PBKDF2", hash: "SHA-256", salt: saltBuffer, iterations }, key, 256);
   return new Uint8Array(bits);
+}
+
+function isSupportedScryptCost(cost: number): boolean {
+  return Number.isInteger(cost) && cost >= 2 && cost <= maxSupportedScryptCost && (cost & (cost - 1)) === 0;
+}
+
+function isSupportedLegacyPbkdf2Iterations(iterations: number): boolean {
+  return Number.isInteger(iterations) && iterations > 0 && iterations <= maxLegacyPbkdf2Iterations;
 }
 
 function constantTimeEqual(left: Uint8Array, right: Uint8Array): boolean {

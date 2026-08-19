@@ -1,11 +1,11 @@
-import { pbkdf2, randomBytes, randomUUID } from "node:crypto";
+import { randomBytes, randomUUID, scrypt } from "node:crypto";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { execFileSync } from "node:child_process";
 
-const derive = promisify(pbkdf2);
+const derive = promisify(scrypt);
 const args = process.argv.slice(2);
 const localIndex = args.indexOf("--local-file");
 const remoteIndex = args.indexOf("--remote");
@@ -23,8 +23,8 @@ const state = readState(query);
 if (Number(state.owner_count) > 0 && state.target_role !== "platform_owner") fail("Există deja un proprietar activ. Conectează-te cu acel cont și acordă rolul din administrare.");
 
 const salt = randomBytes(16);
-const iterations = 600_000;
-const hash = await derive(password, salt, iterations, 32, "sha256");
+const cost = 16_384;
+const hash = await derive(password, salt, 32, { N: cost, r: 8, p: 1, maxmem: 32 * 1024 * 1024 });
 const subject = randomUUID();
 const externalId = `password:${subject}`;
 const statements = [];
@@ -35,7 +35,7 @@ if (!state.target_id) {
   statements.push(`INSERT INTO role_history (user_id,previous_role,new_role,changed_by,reason) VALUES (${Number(state.target_id)},${quote(String(state.target_role))},'platform_owner',${Number(state.target_id)},'Provisioning controlat al primului proprietar')`);
 }
 statements.push(`INSERT INTO auth_identities (user_id,provider,provider_subject,provider_email,email_verified) SELECT id,'password',${quote(subject)},${quote(email)},0 FROM users WHERE normalized_email=${quote(email)} ON CONFLICT(provider,provider_subject) DO NOTHING`);
-statements.push(`INSERT INTO password_credentials (user_id,hash_version,password_hash,salt,iterations,updated_at) SELECT id,'pbkdf2-sha256-v1',${quote(base64url(hash))},${quote(base64url(salt))},${iterations},CURRENT_TIMESTAMP FROM users WHERE normalized_email=${quote(email)} ON CONFLICT(user_id) DO UPDATE SET hash_version=excluded.hash_version,password_hash=excluded.password_hash,salt=excluded.salt,iterations=excluded.iterations,updated_at=CURRENT_TIMESTAMP`);
+statements.push(`INSERT INTO password_credentials (user_id,hash_version,password_hash,salt,iterations,updated_at) SELECT id,'scrypt-v1',${quote(base64url(hash))},${quote(base64url(salt))},${cost},CURRENT_TIMESTAMP FROM users WHERE normalized_email=${quote(email)} ON CONFLICT(user_id) DO UPDATE SET hash_version=excluded.hash_version,password_hash=excluded.password_hash,salt=excluded.salt,iterations=excluded.iterations,updated_at=CURRENT_TIMESTAMP`);
 statements.push(`INSERT INTO audit_logs (actor_user_id,action,entity_type,entity_id,metadata) SELECT id,'admin.credential_provisioned','user',CAST(id AS TEXT),'${JSON.stringify({ source: "operator_cli" }).replaceAll("'", "''")}' FROM users WHERE normalized_email=${quote(email)}`);
 await executeSql(`${statements.join(";\n")};`);
 process.stdout.write(`Credentialele administrative au fost provisionate pentru ${email}. Parola nu a fost salvată în clar.\n`);

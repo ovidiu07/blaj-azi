@@ -3,4 +3,4 @@ Allow: /
 Disallow: /admin
 Disallow: /api
 
-Sitemap: https://blaj-azi.ovidium.chatgpt.site/sitemap.xml
+Sitemap: https://blaj-azi.ro/sitemap.xml

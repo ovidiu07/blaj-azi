@@ -19,15 +19,17 @@ cont și sesiune, plus o integrare de adaptor care nu este documentată pentru
 combinația exactă vinext beta + Sites + schema D1 existentă. Migrarea acestor
 contracte ar avea un risc mai mare decât extensia incrementală de aici.
 
-Workers oferă Web Crypto nativ și suportă PBKDF2. Parolele vor folosi
-`PBKDF2-HMAC-SHA-256`, o sare aleatoare unică, 600.000 de iterații și un format
-versionat. Alegerea urmează recomandarea OWASP pentru PBKDF2-HMAC-SHA-256 și
-evită module native incompatibile cu Workers. Comparația rezultatului derivat
-este făcută în timp constant.
+Workers oferă `scrypt` prin API-ul compatibil Node.js. Parolele folosesc o sare
+aleatoare unică, parametrul de cost `N=16.384`, `r=8`, `p=1` și un format
+versionat. Parametrii rămân sub limitele explicite ale runtime-ului Workers și
+evită plafonul de 100.000 de iterații impus de Workers pentru PBKDF2. Comparația
+rezultatului derivat este făcută în timp constant. Credentialele PBKDF2 vechi
+sunt acceptate numai când parametrul lor nu depășește plafonul runtime-ului;
+cele incompatibile trebuie reprovisionate.
 
 Surse primare și de securitate consultate:
 
-- [Cloudflare Workers Web Crypto](https://developers.cloudflare.com/workers/runtime-apis/web-crypto/)
+- [Cloudflare Workers Node.js crypto](https://developers.cloudflare.com/workers/runtime-apis/nodejs/crypto/)
 - [Cloudflare D1 `batch()` și prepared statements](https://developers.cloudflare.com/d1/worker-api/d1-database/)
 - [vinext — suport App Router, route handlers și bindings Workers](https://github.com/cloudflare/vinext/blob/main/README.md)
 - [Next.js — cookies în Route Handlers](https://nextjs.org/docs/app/api-reference/functions/cookies)

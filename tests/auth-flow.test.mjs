@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { pbkdf2Sync } from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
@@ -36,13 +37,27 @@ test("registration creates only an ordinary user, normalizes email, and never st
   assert.equal(result.account.global_role, "user");
   assert.equal(result.account.normalized_email, "test.user@example.com");
   const credential = await db.prepare("SELECT * FROM password_credentials WHERE user_id=?").bind(result.account.id).first();
-  assert.equal(credential.hash_version, "pbkdf2-sha256-v1");
-  assert.equal(credential.iterations, 600000);
+  assert.equal(credential.hash_version, "scrypt-v1");
+  assert.equal(credential.iterations, 16384);
   assert.notEqual(credential.password_hash, ordinaryInput.password);
   assert.equal(await auth.verifyPassword(ordinaryInput.password, credential), true);
   const identity = await db.prepare("SELECT * FROM auth_identities WHERE user_id=?").bind(result.account.id).first();
   assert.equal(identity.provider, "password");
   assert.equal(identity.email_verified, 0);
+});
+
+test("legacy PBKDF2 credentials stay compatible only within the Cloudflare runtime limit", async () => {
+  const password = "Parola-legacy-foarte-buna-2026";
+  const salt = Buffer.from("blaj-azi-legacy");
+  const passwordHash = pbkdf2Sync(password, salt, 100000, 32, "sha256").toString("base64url");
+  const credential = {
+    hash_version: "pbkdf2-sha256-v1",
+    password_hash: passwordHash,
+    salt: salt.toString("base64url"),
+    iterations: 100000,
+  };
+  assert.equal(await auth.verifyPassword(password, credential), true);
+  assert.equal(await auth.verifyPassword(password, { ...credential, iterations: 600000 }), false);
 });
 
 test("duplicate normalized email is rejected without changing the original user", async () => {
