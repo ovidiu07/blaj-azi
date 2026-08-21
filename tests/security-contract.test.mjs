@@ -17,11 +17,16 @@ test("phase-two migration applies after the original schema and seeds public con
     execFileSync("sqlite3", [database], { input: await read("drizzle/0002_great_mastermind.sql") });
     execFileSync("sqlite3", [database], { input: await read("drizzle/0003_steep_tomorrow_man.sql") });
     execFileSync("sqlite3", [database], { input: await read("drizzle/0004_curved_meggan.sql") });
-    const result = execFileSync("sqlite3", [database, "SELECT COUNT(*) FROM content_records WHERE status='published' AND visibility='public' AND deleted_at IS NULL; SELECT COUNT(*) FROM pragma_table_info('media_assets') WHERE name IN ('business_id','content_id'); SELECT COUNT(*) FROM sqlite_schema WHERE type='table' AND name IN ('auth_identities','password_credentials','auth_sessions','auth_attempts'); PRAGMA integrity_check;"], { encoding: "utf8" }).trim().split("\n");
+    execFileSync("sqlite3", [database], { input: await read("drizzle/0005_robust_namor.sql") });
+    const result = execFileSync("sqlite3", [database, "SELECT COUNT(*) FROM content_records WHERE status='published' AND visibility='public' AND deleted_at IS NULL; SELECT COUNT(*) FROM pragma_table_info('media_assets') WHERE name IN ('business_id','content_id'); SELECT COUNT(*) FROM sqlite_schema WHERE type='table' AND name IN ('auth_identities','password_credentials','auth_sessions','auth_attempts'); SELECT COUNT(*) FROM pragma_table_info('submissions') WHERE name='payload'; SELECT COUNT(*) FROM content_records WHERE type='place' AND is_demo=0; SELECT COUNT(*) FROM events WHERE created_at='CURRENT_TIMESTAMP' OR updated_at='CURRENT_TIMESTAMP'; SELECT COUNT(*) FROM sqlite_schema WHERE type='index' AND name IN ('idx_content_records_public_discovery','idx_events_public_dates','idx_offers_public_dates','idx_jobs_public_deadline'); PRAGMA integrity_check;"], { encoding: "utf8" }).trim().split("\n");
     assert.equal(Number(result[0]), 20);
     assert.equal(Number(result[1]), 2);
     assert.equal(Number(result[2]), 4);
-    assert.equal(result[3], "ok");
+    assert.equal(Number(result[3]), 1);
+    assert.equal(Number(result[4]), 4);
+    assert.equal(Number(result[5]), 0);
+    assert.equal(Number(result[6]), 4);
+    assert.equal(result[7], "ok");
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
@@ -80,5 +85,12 @@ test("content lifecycle preserves public revisions and blocks ownership escalati
   assert.doesNotMatch(content, /raw\.ownerUserId|raw\.createdBy|raw\.publishedBy/);
   const publicData = await read("app/server/public-data.ts");
   assert.match(publicData, /status='published'.*visibility='public'.*deleted_at IS NULL/);
+  assert.match(publicData, /c\.is_demo=0/);
+  assert.match(publicData, /e\.ends_at.*e\.starts_at.*bucharestDate/s);
+  assert.match(publicData, /date\(o\.ends_at\).*date\(j\.deadline\)/s);
   assert.doesNotMatch(publicData, /pending_review'\s+AND\s+c\.visibility='public/);
+  const submissions = await read("app/api/submissions/route.ts");
+  assert.match(submissions, /validateTypePayload/);
+  assert.match(submissions, /payload.*pending_review/s);
+  assert.match(submissions, /targetContentId.*status='published'.*visibility='public'/s);
 });

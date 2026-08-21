@@ -65,8 +65,28 @@ test("renders first-party auth pages and protects account and admin routes", asy
 });
 
 test("keeps representative public routes renderable", async () => {
-  for (const path of ["/descopera-blaj", "/descopera-blaj/campia-libertatii", "/evenimente", "/evenimente/atelier-micilor-exploratori", "/afaceri-si-servicii", "/oferte-locale", "/unde-mancam", "/locuri-de-munca", "/povesti-locale", "/informatii-utile", "/promovare", "/adauga-o-afacere"]) {
+  for (const path of ["/descopera-blaj", "/descopera-blaj/campia-libertatii", "/evenimente", "/evenimente/seara-de-film", "/afaceri-si-servicii", "/oferte-locale", "/unde-mancam", "/locuri-de-munca", "/povesti-locale", "/informatii-utile", "/promovare", "/adauga", "/adauga-o-afacere"]) {
     const response = await render(path);
     assert.equal(response.status, 200, path);
+    const html = await response.text();
+    assert.equal((html.match(/<h1\b/gi) || []).length, 1, `${path} should have one H1`);
   }
+});
+
+test("renders URL-backed filters, safe search metadata, and type-specific forms", async () => {
+  const events = await render("/evenimente?period=weekend&category=Cultur%C4%83");
+  const eventsHtml = await events.text();
+  assert.match(eventsHtml, /name="period"/);
+  assert.match(eventsHtml, /Weekend/);
+  assert.match(eventsHtml, /Filtre active/);
+  const search = await render("/cauta?q=meditatii");
+  const searchHtml = await search.text();
+  assert.match(searchHtml, /name="q"/);
+  assert.match(searchHtml, /noindex/i);
+  const eventForm = await render("/adauga-un-eveniment");
+  const eventHtml = await eventForm.text();
+  assert.match(eventHtml, /name="startsAt"/);
+  assert.match(eventHtml, /name="organizer"/);
+  assert.match(eventHtml, /Europe\/Bucharest/);
+  assert.match(eventHtml, /Publicare numai după moderare/);
 });

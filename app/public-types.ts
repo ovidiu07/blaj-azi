@@ -1,9 +1,29 @@
-export type PublicEvent = { id:string;contentId?:number;entityId?:number;title:string;date:string;startDate:string;time:string;place:string;category:string;price:string;image:string;locality?:string;description?:string;source?:string;isDemo?:boolean;updatedAt?:string };
-export type PublicBusiness = { id:string;contentId?:number;entityId?:number;name:string;category:string;locality:string;phone:string;promoted:boolean;image?:string;description?:string;source?:string;isDemo?:boolean;verified?:boolean;updatedAt?:string };
-export type PublicOffer = { id:string;contentId?:number;entityId?:number;title:string;business:string;price:string;old:string;until:string;image?:string;description?:string;source?:string;isDemo?:boolean;promoted?:boolean;updatedAt?:string };
-export type PublicRestaurant = { id:string;contentId?:number;entityId?:number;name:string;type:string;dish:string;price:string;services:string;image?:string;description?:string;source?:string;isDemo?:boolean;updatedAt?:string };
-export type PublicJob = { id:string;contentId?:number;entityId?:number;title:string;company:string;locality:string;type:string;schedule:string;salary:string;transport:boolean;description?:string;source?:string;isDemo?:boolean;updatedAt?:string };
-export type PublicPlace = { id:string;contentId?:number;entityId?:number;title:string;eyebrow:string;image:string;text:string;source:string;locality?:string;isDemo?:boolean;updatedAt?:string };
-export type PublicPost = { id:string;contentId?:number;entityId?:number;title:string;excerpt:string;body:string;type:string;author:string;business?:string;locality?:string;image?:string;source?:string;isDemo?:boolean;updatedAt?:string };
-export type PublicCatalog = { events:PublicEvent[];businesses:PublicBusiness[];offers:PublicOffer[];restaurants:PublicRestaurant[];jobs:PublicJob[];places:PublicPlace[];posts:PublicPost[] };
-export type PublicViewer = { signedIn:boolean;canEdit:boolean;canAdmin:boolean };
+export type PublicBase = {
+  id: string;
+  contentId?: number;
+  entityId?: number;
+  locality?: string;
+  description?: string;
+  source?: string;
+  isDemo?: boolean;
+  updatedAt?: string;
+  verifiedAt?: string;
+  address?: string;
+  latitude?: number;
+  longitude?: number;
+  image?: string;
+};
+
+export type PublicEvent = PublicBase & {
+  title: string; date: string; startDate: string; endDate?: string; time: string;
+  place: string; venue?: string; organizer?: string; category: string; price: string;
+  accessibility?: string; isFree: boolean; image: string;
+};
+export type PublicBusiness = PublicBase & { name: string; category: string; phone?: string; email?: string; website?: string; promoted: boolean; verified?: boolean };
+export type PublicOffer = PublicBase & { title: string; business: string; category?: string; price: string; priceValue?: number; old: string; oldPriceValue?: number; startsAt: string; endsAt: string; until: string; terms?: string; availability?: string; promoted?: boolean };
+export type PublicRestaurant = PublicBase & { name: string; type: string; dish: string; price: string; services: string; phone?: string; delivery: boolean; pickup: boolean; dietaryOptions?: string };
+export type PublicJob = PublicBase & { title: string; company: string; type: string; schedule: string; salary: string; salaryDisclosed: boolean; transport: boolean; requirements?: string; benefits?: string; applicationMethod?: string; applyUrl?: string; deadline?: string };
+export type PublicPlace = PublicBase & { title: string; eyebrow: string; image: string; text: string; source: string; accessibility?: string };
+export type PublicPost = PublicBase & { title: string; excerpt: string; body: string; type: string; category?: string; author: string; business?: string };
+export type PublicCatalog = { events: PublicEvent[]; businesses: PublicBusiness[]; offers: PublicOffer[]; restaurants: PublicRestaurant[]; jobs: PublicJob[]; places: PublicPlace[]; posts: PublicPost[] };
+export type PublicViewer = { signedIn: boolean; canEdit: boolean; canAdmin: boolean };

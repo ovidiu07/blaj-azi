@@ -2,7 +2,36 @@ import { env } from "cloudflare:workers";
 import { getRuntimeDb } from "../../../db/runtime";
 import { assertSameOrigin, getOptionalAccount } from "../../server/platform";
 
-const allowedTypes = new Set(["business", "event", "offer", "job", "contribution", "contact", "promotion", "newsletter"]);
+const allowedTypes = new Set(["business", "event", "offer", "job", "contribution", "contact", "newsletter"]);
+const payloadFields: Record<string, string[]> = {
+  business: ["address", "serviceArea", "phone", "contactEmail", "businessWebsite", "hours", "accessibility", "ownershipEvidence"],
+  event: ["startsAt", "endsAt", "venue", "address", "organizer", "contact", "price", "bookingUrl", "accessibility"],
+  offer: ["businessName", "currentPrice", "oldPrice", "validFrom", "validUntil", "terms", "redemption"],
+  job: ["employer", "employmentType", "schedule", "salary", "applicationMethod", "deadline", "requirements", "benefits", "transport"],
+  contribution: ["contributionType", "eventDate", "location", "author", "photographer", "license", "altText"],
+  contact: ["issueType"],
+};
+
+function clean(form: FormData, key: string, max = 4000) {
+  return String(form.get(key) || "").trim().slice(0, max);
+}
+
+function validateTypePayload(type: string, form: FormData) {
+  const required: Record<string, string[]> = {
+    business: ["title", "category", "locality", "description", "address", "phone"],
+    event: ["title", "category", "locality", "description", "startsAt", "venue", "organizer"],
+    offer: ["title", "description", "businessName", "currentPrice", "validFrom", "validUntil", "terms"],
+    job: ["title", "locality", "description", "employer", "employmentType", "applicationMethod", "deadline"],
+    contribution: ["title", "description", "contributionType", "author", "license"],
+    contact: ["description", "issueType"],
+  };
+  const missing = (required[type] || []).find((key) => !clean(form, key));
+  if (missing) return `Câmp obligatoriu lipsă: ${missing}`;
+  if (type === "event" && Number.isNaN(Date.parse(clean(form, "startsAt")))) return "Data evenimentului nu este validă.";
+  if (type === "offer" && (Number(clean(form, "currentPrice")) < 0 || Date.parse(clean(form, "validUntil")) < Date.parse(clean(form, "validFrom")))) return "Perioada sau prețul ofertei nu este valid.";
+  if (type === "job" && Number.isNaN(Date.parse(clean(form, "deadline")))) return "Termenul de aplicare nu este valid.";
+  return null;
+}
 function validImage(bytes: Uint8Array) {
   const jpeg = bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff;
   const png = bytes.length >= 8 && [0x89,0x50,0x4e,0x47,0x0d,0x0a,0x1a,0x0a].every((value, index) => bytes[index] === value);
@@ -27,10 +56,19 @@ export async function POST(request: Request) {
       await db.prepare(`INSERT INTO newsletter_subscriptions (email, interests, status) VALUES (?, ?, 'pending_confirmation') ON CONFLICT(email) DO UPDATE SET interests=excluded.interests, status='pending_confirmation'`).bind(email, interests).run();
       return Response.json({ ok: true, status: "pending_confirmation" });
     }
+    const validationError = validateTypePayload(type, form);
+    if (validationError) return Response.json({ error: validationError }, { status: 400 });
+    if (type !== "contact" && !form.get("rights")) return Response.json({ error: "Confirmarea drepturilor este obligatorie." }, { status: 400 });
+    let target: { id:number;type:string;title:string;slug:string } | null = null;
     if(type==="contact"){
-      const reason=String(form.get("description")||"").trim().slice(0,4000);
+      const reason=clean(form,"description");
+      const targetContentId=Number(form.get("targetContentId"))||0;
+      if(targetContentId){
+        target=await db.prepare("SELECT id,type,title,slug FROM content_records WHERE id=? AND status='published' AND visibility='public' AND deleted_at IS NULL").bind(targetContentId).first<{id:number;type:string;title:string;slug:string}>()||null;
+        if(!target)return Response.json({error:"Conținutul raportat nu este public sau nu există."},{status:400});
+      }
       await db.batch([
-        db.prepare("INSERT INTO content_reports (email,reason,reporter_user_id,status) VALUES (?,?,?,'new')").bind(account?.email||email,reason,account?.id??null),
+        db.prepare("INSERT INTO content_reports (entity_type,entity_id,email,reason,reporter_user_id,status) VALUES (?,?,?,?,?,'new')").bind(target?.type||null,target?.id||null,account?.email||email,reason,account?.id??null),
         db.prepare("INSERT INTO contact_messages (name,email,message,status) VALUES (?,?,?,'new')").bind(account?.displayName||String(form.get("name")||"").slice(0,180),account?.email||email,reason),
       ]);
     }
@@ -45,9 +83,10 @@ export async function POST(request: Request) {
       mediaKey = `submissions/${crypto.randomUUID()}.${extension}`;
       await env.MEDIA.put(mediaKey, bytes, { httpMetadata: { contentType: detected }, customMetadata: { originalName: media.name.slice(0, 180), ownerUserId: account ? String(account.id) : "anonymous" } });
     }
-    const value = (key: string, max = 4000) => String(form.get(key) || "").trim().slice(0, max);
-    await db.prepare(`INSERT INTO submissions (type, contributor_name, email, title, locality, category, description, source_url, media_key, rights_confirmed, consent, status, user_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 'pending_review', ?)`).bind(type, account?.displayName || value("name", 180), account?.email || email, value("title", 240), value("locality", 100), value("category", 120), value("description"), value("source", 800), mediaKey, form.get("rights") ? 1 : 0, account?.id ?? null).run();
-    return Response.json({ ok: true, status: "pending_review" });
+    const payload = Object.fromEntries((payloadFields[type] || []).map((key) => [key, clean(form, key, 1000)]).filter(([, value]) => value));
+    if (target) Object.assign(payload, { targetContentId:target.id, targetType:target.type, targetTitle:target.title, targetSlug:target.slug });
+    const result=await db.prepare(`INSERT INTO submissions (type, contributor_name, email, title, locality, category, description, source_url, media_key, payload, rights_confirmed, consent, status, user_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 'pending_review', ?)`).bind(type, account?.displayName || clean(form,"name",180), account?.email || email, clean(form,"title",240), clean(form,"locality",100), clean(form,"category",120), clean(form,"description"), clean(form,"source",800), mediaKey, JSON.stringify(payload), form.get("rights") ? 1 : 0, account?.id ?? null).run();
+    return Response.json({ ok:true, status:"pending_review", reference:`BA-${String(result.meta.last_row_id).padStart(6,"0")}`, id:result.meta.last_row_id }, { status:201 });
   } catch (error) {
     console.error("submission_failed", error instanceof Error ? error.message : "unknown");
     return Response.json({ error: "Nu am putut salva trimiterea" }, { status: 500 });

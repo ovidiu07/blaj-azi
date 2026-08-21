@@ -26,7 +26,8 @@ export async function generateMetadata(): Promise<Metadata> {
     metadataBase: base,
     title: { default: "Blaj Azi — Ghidul local al Blajului", template: "%s | Blaj Azi" },
     description: "Evenimente, servicii, restaurante, oferte, joburi și locuri de descoperit în Blaj și împrejurimi.",
-    openGraph: { title: "Blaj Azi", description: "Tot ce contează în Blaj, într-un singur loc.", locale: "ro_RO", type: "website", images: [{ url: image, width: 1536, height: 1024, alt: "Blaj Azi — ghidul comunității locale" }] },
+    alternates: { canonical: "/" },
+    openGraph: { title: "Blaj Azi", description: "Tot ce contează în Blaj, într-un singur loc.", locale: "ro_RO", type: "website", url: "/", images: [{ url: image, width: 1200, height: 630, alt: "Blaj Azi — ghidul comunității locale" }] },
     twitter: { card: "summary_large_image", images: [image] },
     icons: { icon: "/favicon.svg", shortcut: "/favicon.svg" },
   };
