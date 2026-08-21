@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 
 const root = new URL("../", import.meta.url);
@@ -11,14 +11,29 @@ const read = path => readFile(new URL(path, root), "utf8");
 test("phase-two migration applies after the original schema and seeds public content once", async () => {
   const directory = await mkdtemp(join(tmpdir(), "blaj-azi-migration-"));
   const database = join(directory, "test.sqlite");
+  const db = new DatabaseSync(database);
   try {
-    execFileSync("sqlite3", [database], { input: await read("drizzle/0000_bumpy_vanisher.sql") });
-    execFileSync("sqlite3", [database], { input: await read("drizzle/0001_lame_elektra.sql") });
-    execFileSync("sqlite3", [database], { input: await read("drizzle/0002_great_mastermind.sql") });
-    execFileSync("sqlite3", [database], { input: await read("drizzle/0003_steep_tomorrow_man.sql") });
-    execFileSync("sqlite3", [database], { input: await read("drizzle/0004_curved_meggan.sql") });
-    execFileSync("sqlite3", [database], { input: await read("drizzle/0005_robust_namor.sql") });
-    const result = execFileSync("sqlite3", [database, "SELECT COUNT(*) FROM content_records WHERE status='published' AND visibility='public' AND deleted_at IS NULL; SELECT COUNT(*) FROM pragma_table_info('media_assets') WHERE name IN ('business_id','content_id'); SELECT COUNT(*) FROM sqlite_schema WHERE type='table' AND name IN ('auth_identities','password_credentials','auth_sessions','auth_attempts'); SELECT COUNT(*) FROM pragma_table_info('submissions') WHERE name='payload'; SELECT COUNT(*) FROM content_records WHERE type='place' AND is_demo=0; SELECT COUNT(*) FROM events WHERE created_at='CURRENT_TIMESTAMP' OR updated_at='CURRENT_TIMESTAMP'; SELECT COUNT(*) FROM sqlite_schema WHERE type='index' AND name IN ('idx_content_records_public_discovery','idx_events_public_dates','idx_offers_public_dates','idx_jobs_public_deadline'); PRAGMA integrity_check;"], { encoding: "utf8" }).trim().split("\n");
+    for (const migration of [
+      "drizzle/0000_bumpy_vanisher.sql",
+      "drizzle/0001_lame_elektra.sql",
+      "drizzle/0002_great_mastermind.sql",
+      "drizzle/0003_steep_tomorrow_man.sql",
+      "drizzle/0004_curved_meggan.sql",
+      "drizzle/0005_robust_namor.sql",
+    ]) {
+      db.exec((await read(migration)).replaceAll("--> statement-breakpoint", ""));
+    }
+    const scalar = sql => String(Object.values(db.prepare(sql).get())[0]);
+    const result = [
+      scalar("SELECT COUNT(*) FROM content_records WHERE status='published' AND visibility='public' AND deleted_at IS NULL"),
+      scalar("SELECT COUNT(*) FROM pragma_table_info('media_assets') WHERE name IN ('business_id','content_id')"),
+      scalar("SELECT COUNT(*) FROM sqlite_schema WHERE type='table' AND name IN ('auth_identities','password_credentials','auth_sessions','auth_attempts')"),
+      scalar("SELECT COUNT(*) FROM pragma_table_info('submissions') WHERE name='payload'"),
+      scalar("SELECT COUNT(*) FROM content_records WHERE type='place' AND is_demo=0"),
+      scalar("SELECT COUNT(*) FROM events WHERE created_at='CURRENT_TIMESTAMP' OR updated_at='CURRENT_TIMESTAMP'"),
+      scalar("SELECT COUNT(*) FROM sqlite_schema WHERE type='index' AND name IN ('idx_content_records_public_discovery','idx_events_public_dates','idx_offers_public_dates','idx_jobs_public_deadline')"),
+      scalar("PRAGMA integrity_check"),
+    ];
     assert.equal(Number(result[0]), 20);
     assert.equal(Number(result[1]), 2);
     assert.equal(Number(result[2]), 4);
@@ -28,6 +43,7 @@ test("phase-two migration applies after the original schema and seeds public con
     assert.equal(Number(result[6]), 4);
     assert.equal(result[7], "ok");
   } finally {
+    db.close();
     await rm(directory, { recursive: true, force: true });
   }
 });
