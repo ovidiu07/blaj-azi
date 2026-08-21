@@ -64,6 +64,7 @@ test("mutation endpoints authenticate, authorize, and reject cross-site writes",
     "app/api/admin/categories/route.ts",
     "app/api/admin/reports/route.ts",
     "app/api/admin/promotions/route.ts",
+    "app/api/admin/site-content/[key]/route.ts",
     "app/api/businesses/[id]/hours/route.ts",
     "app/api/businesses/[id]/team/route.ts",
     "app/api/media/route.ts",
@@ -87,6 +88,9 @@ test("mutation endpoints authenticate, authorize, and reject cross-site writes",
   assert.match(auth, /global_role.*'user'/s);
   assert.doesNotMatch(auth, /input\.(role|globalRole|ownerUserId|membershipId)/);
   assert.match(await read("app/api/admin/users/route.ts"), /Ultimul proprietar activ al platformei/);
+  const cmsRoute = await read("app/api/admin/site-content/[key]/route.ts");
+  assert.match(cmsRoute, /loadAdminSiteContent|saveSiteContentDraft|siteContentAction/);
+  assert.match(await read("app/server/site-content.ts"), /stale_version|site_content\.published|media_not_approved/);
   assert.match(await read("app/api/submissions/route.ts"), /assertSameOrigin/);
   assert.match(await read("app/api/admin/claims/route.ts"), /owner_user_id=\?,business_id=\?/);
   assert.match(await read("app/api/media/[id]/route.ts"), /approval_status==="approved".*content_visibility==="public"/s);

@@ -3,7 +3,8 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { getChatGPTUser } from "../chatgpt-auth";
 import { getRuntimeDb } from "../../db/runtime";
-import { AuthError, AuthUserRow, normalizeEmailAddress, resolveSessionToken, safeReturnPath, SECURE_SESSION_COOKIE, SESSION_COOKIE } from "./auth";
+import { AuthError, normalizeEmailAddress, resolveSessionToken, safeReturnPath, SECURE_SESSION_COOKIE, SESSION_COOKIE } from "./auth";
+import type { AuthUserRow } from "./auth";
 
 export const globalRoles = ["user", "business_owner", "admin", "platform_owner"] as const;
 export type GlobalRole = (typeof globalRoles)[number];
@@ -23,12 +24,12 @@ export type LocalAccount = {
 };
 
 export class PlatformError extends Error {
-  constructor(
-    public status: number,
-    message: string,
-    public code = "platform_error",
-  ) {
+  status: number;
+  code: string;
+  constructor(status: number, message: string, code = "platform_error") {
     super(message);
+    this.status = status;
+    this.code = code;
   }
 }
 

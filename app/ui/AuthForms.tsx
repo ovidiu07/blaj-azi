@@ -6,8 +6,9 @@ import { FormEvent, useState } from "react";
 
 type AuthMode = "login" | "register" | "admin";
 
-export function AuthPage({ eyebrow, title, copy, children }: { eyebrow: string; title: string; copy: string; children: React.ReactNode }) {
-  return <section className="auth-shell"><div className="auth-context"><p className="eyebrow">{eyebrow}</p><h1>{title}</h1><p>{copy}</p><ul><li>Sesiune protejată pe server</li><li>Datele tale nu sunt publicate automat</li><li>Contribuțiile rămân moderate înainte de publicare</li></ul><Link href="/">Înapoi la Blaj Azi</Link></div><div className="auth-card">{children}</div></section>;
+export function AuthPage({ eyebrow, title, copy, benefits, children }: { eyebrow: string; title: string; copy: string; benefits?: string[]; children: React.ReactNode }) {
+  const items = benefits?.length ? benefits : ["Sesiune protejată pe server", "Datele tale nu sunt publicate automat", "Contribuțiile rămân moderate înainte de publicare"];
+  return <section className="auth-shell"><div className="auth-context"><p className="eyebrow">{eyebrow}</p><h1>{title}</h1><p>{copy}</p><ul>{items.map(item => <li key={item}>{item}</li>)}</ul><Link href="/">Înapoi la Blaj Azi</Link></div><div className="auth-card">{children}</div></section>;
 }
 
 export function AuthForm({ mode, returnTo }: { mode: AuthMode; returnTo: string }) {

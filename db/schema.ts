@@ -242,6 +242,8 @@ export const contentRecords = sqliteTable(
     deletedBy: integer("deleted_by"),
     deletionReason: text("deletion_reason"),
     expiresAt: text("expires_at"),
+    seoTitle: text("seo_title"),
+    seoDescription: text("seo_description"),
     publishedSnapshot: text("published_snapshot"),
     version: integer("version").notNull().default(1),
     createdAt: text("created_at").notNull().default(now),
@@ -346,3 +348,42 @@ export const roleHistory = sqliteTable(
 );
 
 export const platformSettings = sqliteTable("platform_settings", { key: text("key").primaryKey(), value: text("value").notNull(), updatedBy: integer("updated_by"), updatedAt: text("updated_at").notNull().default(now) });
+
+export const siteContentEntries = sqliteTable(
+  "site_content_entries",
+  {
+    key: text("key").primaryKey(),
+    scope: text("scope").notNull(),
+    route: text("route").notNull(),
+    label: text("label").notNull(),
+    schemaVersion: integer("schema_version").notNull().default(1),
+    draftJson: text("draft_json").notNull(),
+    publishedJson: text("published_json").notNull(),
+    version: integer("version").notNull().default(1),
+    updatedBy: integer("updated_by"),
+    updatedAt: text("updated_at").notNull().default(now),
+    publishedBy: integer("published_by"),
+    publishedAt: text("published_at"),
+  },
+  (table) => [
+    index("idx_site_content_entries_scope").on(table.scope, table.key),
+    index("idx_site_content_entries_route").on(table.route),
+  ],
+);
+
+export const siteContentRevisions = sqliteTable(
+  "site_content_revisions",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    entryKey: text("entry_key").notNull(),
+    revisionNumber: integer("revision_number").notNull(),
+    snapshot: text("snapshot").notNull(),
+    action: text("action").notNull(),
+    actorUserId: integer("actor_user_id").notNull(),
+    createdAt: text("created_at").notNull().default(now),
+  },
+  (table) => [
+    uniqueIndex("site_content_revisions_entry_number_unique").on(table.entryKey, table.revisionNumber),
+    index("idx_site_content_revisions_entry_created").on(table.entryKey, table.createdAt),
+  ],
+);

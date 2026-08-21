@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { getOptionalAccount } from "../server/platform";
 import { safeReturnPath } from "../server/auth";
 import { AuthForm, AuthPage } from "../ui/AuthForms";
+import { loadPublishedSiteContent } from "../server/site-content";
 
 export const metadata: Metadata = { title: "Înregistrare", robots: { index: false, follow: false } };
 export const dynamic = "force-dynamic";
@@ -10,5 +11,6 @@ export const dynamic = "force-dynamic";
 export default async function RegisterPage({ searchParams }: { searchParams: Promise<{ return_to?: string }> }) {
   const returnTo = safeReturnPath((await searchParams).return_to, "/cont");
   if (await getOptionalAccount().catch(() => null)) redirect(returnTo);
-  return <AuthPage eyebrow="Alătură-te comunității" title="Creează un cont Blaj Azi" copy="Păstrează-ți contribuțiile într-un singur loc și urmărește parcursul lor prin moderare."><AuthForm mode="register" returnTo={returnTo} /></AuthPage>;
+  const content = await loadPublishedSiteContent("auth.register");
+  return <AuthPage eyebrow={String(content.eyebrow)} title={String(content.title)} copy={String(content.intro)} benefits={Array.isArray(content.benefits) ? content.benefits.map(String) : []}><AuthForm mode="register" returnTo={returnTo} /></AuthPage>;
 }

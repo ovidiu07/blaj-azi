@@ -1,6 +1,7 @@
 import { env } from "cloudflare:workers";
 import { getRuntimeDb } from "../../../db/runtime";
 import { assertSameOrigin, canManageEntity, cleanText, enforceRateLimit, isAdmin, jsonError, PlatformError, requireAuthenticatedUser, requireBusinessMembership } from "../../server/platform";
+import { safeExternalHref } from "../../site-content";
 
 const maxBytes = 8 * 1024 * 1024;
 const formats = {
@@ -49,12 +50,15 @@ export async function POST(request: Request) {
     if (contentId && !(await canManageEntity(account, contentId))) throw new PlatformError(403, "Nu poți atașa imaginea acestui material.");
     const objectKey = `users/${account.id}/${crypto.randomUUID()}.${format.extension}`;
     await env.MEDIA.put(objectKey, bytes, { httpMetadata: { contentType: format.mime }, customMetadata: { originalName: file.name.slice(0, 180), ownerUserId: String(account.id) } });
+    const rawSource = cleanText(form.get("sourceUrl"), 800);
+    const sourceUrl = rawSource ? safeExternalHref(rawSource) : null;
+    if (rawSource && !sourceUrl) throw new PlatformError(400, "Sursa imaginii trebuie să fie un URL HTTP sau HTTPS valid.");
     const result = await getRuntimeDb().prepare("INSERT INTO media_assets (r2_key,title,photographer,source_url,license,alt_text,owner_user_id,business_id,content_id,original_filename,mime_type,size_bytes,approval_status,media_status,orphaned_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,'pending','active',datetime('now','+7 days'))")
-      .bind(objectKey, cleanText(form.get("title"), 240) || null, cleanText(form.get("photographer"), 240) || null, cleanText(form.get("sourceUrl"), 800) || null, cleanText(form.get("license"), 120) || null, altText, account.id, businessId, contentId, file.name.slice(0, 180), format.mime, file.size).run();
+      .bind(objectKey, cleanText(form.get("title"), 240) || null, cleanText(form.get("photographer"), 240) || null, sourceUrl, cleanText(form.get("license"), 120) || null, altText, account.id, businessId, contentId, file.name.slice(0, 180), format.mime, file.size).run();
     await getRuntimeDb().prepare("INSERT INTO audit_logs (actor_user_id,action,entity_type,entity_id,metadata) VALUES (?,'media.uploaded','media',?,?)")
       .bind(account.id, String(result.meta.last_row_id), JSON.stringify({ mimeType: format.mime, size: file.size })).run();
     return Response.json({ id: result.meta.last_row_id, key: objectKey, status: "pending" }, { status: 201 });
   } catch (error) { return jsonError(error); }
 }
 
-export async function DELETE(request:Request){try{assertSameOrigin(request);const account=await requireAuthenticatedUser();if(!isAdmin(account))throw new PlatformError(403,"Acces administrativ necesar.");const db=getRuntimeDb();const rows=await db.prepare("SELECT id,r2_key FROM media_assets WHERE media_status='active' AND approval_status='pending' AND orphaned_at IS NOT NULL AND datetime(orphaned_at)<=CURRENT_TIMESTAMP LIMIT 100").all<{id:number;r2_key:string}>();for(const row of rows.results)await env.MEDIA.delete(row.r2_key);if(rows.results.length)await db.batch(rows.results.map(row=>db.prepare("UPDATE media_assets SET media_status='soft_deleted',archived_at=CURRENT_TIMESTAMP WHERE id=?").bind(row.id)));await db.prepare("INSERT INTO audit_logs (actor_user_id,action,entity_type,metadata) VALUES (?,'media.orphans_cleaned','media',?)").bind(account.id,JSON.stringify({count:rows.results.length})).run();return Response.json({removed:rows.results.length})}catch(error){return jsonError(error)}}
+export async function DELETE(request:Request){try{assertSameOrigin(request);const account=await requireAuthenticatedUser();if(!isAdmin(account))throw new PlatformError(403,"Acces administrativ necesar.");const db=getRuntimeDb();const rows=await db.prepare(`SELECT m.id,m.r2_key FROM media_assets m WHERE m.media_status='active' AND m.approval_status='pending' AND m.orphaned_at IS NOT NULL AND datetime(m.orphaned_at)<=CURRENT_TIMESTAMP AND m.content_id IS NULL AND NOT EXISTS (SELECT 1 FROM site_content_entries e WHERE e.draft_json LIKE '%"mediaId":'||m.id||'%' OR e.published_json LIKE '%"mediaId":'||m.id||'%') AND NOT EXISTS (SELECT 1 FROM site_content_revisions r WHERE r.snapshot LIKE '%"mediaId":'||m.id||'%') LIMIT 100`).all<{id:number;r2_key:string}>();for(const row of rows.results)await env.MEDIA.delete(row.r2_key);if(rows.results.length)await db.batch(rows.results.map(row=>db.prepare("UPDATE media_assets SET media_status='soft_deleted',archived_at=CURRENT_TIMESTAMP WHERE id=?").bind(row.id)));await db.prepare("INSERT INTO audit_logs (actor_user_id,action,entity_type,metadata) VALUES (?,'media.orphans_cleaned','media',?)").bind(account.id,JSON.stringify({count:rows.results.length})).run();return Response.json({removed:rows.results.length})}catch(error){return jsonError(error)}}
