@@ -22,12 +22,14 @@ export type RichTextBlock = {
 export type CmsField = {
   path: string;
   label: string;
-  kind: "short" | "multiline" | "internal-link" | "external-url" | "toggle" | "enum" | "image" | "repeatable" | "richtext";
+  kind: "short" | "multiline" | "internal-link" | "external-url" | "toggle" | "section-visibility" | "hidden" | "deletion-marker" | "enum" | "image" | "repeatable" | "richtext";
   required?: boolean;
   maxLength?: number;
   options?: readonly string[];
   itemFields?: readonly CmsField[];
   help?: string;
+  group?: string;
+  defaultValue?: string | boolean;
 };
 
 export type SiteContentDefinition = {
@@ -47,6 +49,13 @@ const image = (src: string, alt: string, author: string, sourceUrl: string, lice
 });
 const text = (path: string, label: string, kind: CmsField["kind"] = "short", maxLength = 240, required = true): CmsField => ({ path, label, kind, maxLength, required });
 const linkFields = [text("label", "Etichetă", "short", 100), text("href", "Link intern", "internal-link", 300)] as const;
+const optionalText = (path: string, label: string, kind: CmsField["kind"] = "short", maxLength = 240, group?: string): CmsField => ({ path, label, kind, maxLength, required: false, group });
+const visibility = (path: string, group: string): CmsField => ({ path, label: group, kind: "section-visibility", group, defaultValue: true });
+const repeatableState = [
+  { path: "id", label: "Identificator", kind: "hidden", required: false, maxLength: 100 },
+  { path: "visible", label: "Afișează elementul", kind: "toggle", defaultValue: true },
+  { path: "deleted", label: "Element șters", kind: "deletion-marker", defaultValue: false },
+] as const satisfies readonly CmsField[];
 
 const listing = (key: string, route: string, label: string, eyebrow: string, title: string, intro: string, empty: string, ctaLabel: string, ctaHref: string): SiteContentDefinition => ({
   key, scope: "page", route, label, group: "Pagini de listare", schemaVersion: 1,
@@ -70,34 +79,50 @@ const informativePage = (key: string, route: string, label: string, title: strin
 
 export const siteContentDefinitions: readonly SiteContentDefinition[] = [
   {
-    key: "home", scope: "page", route: "/", label: "Pagina principală", group: "Pagina principală", schemaVersion: 1,
+    key: "home", scope: "page", route: "/", label: "Pagina principală", group: "Pagina principală", schemaVersion: 2,
     defaults: {
+      heroVisible: true,
       heroImage: image("/images/campia-libertatii.jpg", "Câmpia Libertății din Blaj", "Țetcu Mircea Rareș", "https://commons.wikimedia.org/", "CC BY-SA 4.0"),
       kicker: "Ghidul comunității din Blaj", titleLine: "Tot ce contează în Blaj,", emphasizedTitleLine: "într-un singur loc.",
       intro: "Descoperă oameni, locuri și lucruri utile — aproape de tine, explicate simplu și actualizate responsabil.",
+      searchVisible: true,
       searchLabel: "Caută în Blaj", searchPlaceholder: "Ce cauți în Blaj?", searchButton: "Caută",
       primaryCtaLabel: "Ce se întâmplă azi", primaryCtaHref: "/evenimente?period=today", secondaryCtaLabel: "Adaugă informație", secondaryCtaHref: "/adauga",
+      quickCategoriesVisible: true, quickCategoriesLabel: "Categorii rapide",
       quickCategories: [
-        { label: "Evenimente", href: "/evenimente", icon: "calendar", visible: true }, { label: "Restaurante", href: "/unde-mancam", icon: "restaurant", visible: true },
-        { label: "Servicii", href: "/afaceri-si-servicii", icon: "services", visible: true }, { label: "Oferte", href: "/oferte-locale", icon: "offers", visible: true },
-        { label: "Joburi", href: "/locuri-de-munca", icon: "jobs", visible: true }, { label: "Pentru copii", href: "/evenimente?category=Copii", icon: "children", visible: true },
+        { id: "events", label: "Evenimente", href: "/evenimente", icon: "calendar", visible: true, deleted: false }, { id: "restaurants", label: "Restaurante", href: "/unde-mancam", icon: "restaurant", visible: true, deleted: false },
+        { id: "services", label: "Servicii", href: "/afaceri-si-servicii", icon: "services", visible: true, deleted: false }, { id: "offers", label: "Oferte", href: "/oferte-locale", icon: "offers", visible: true, deleted: false },
+        { id: "jobs", label: "Joburi", href: "/locuri-de-munca", icon: "jobs", visible: true, deleted: false }, { id: "children", label: "Pentru copii", href: "/evenimente?category=Copii", icon: "children", visible: true, deleted: false },
       ],
-      eventsEyebrow: "În următoarele zile", eventsTitle: "Ce se întâmplă în Blaj", eventsLinkLabel: "Vezi calendarul", eventsEmptyTitle: "Niciun rezultat aici, deocamdată.", eventsEmptyDescription: "Încearcă un alt filtru sau vezi toate evenimentele.",
-      discoverEyebrow: "Orașul nostru", discoverTitle: "Descoperă Blaj", discoverLinkLabel: "Explorează toate locurile", editorialImage: image("", "", "", "", ""), editorialKicker: "Povestea orașului", editorialTitle: "Un loc în care istoria rămâne vie", editorialCopy: "Reperele Blajului, poveștile oamenilor și locurile care merită privite pe îndelete.", editorialCtaLabel: "Începe explorarea", editorialCtaHref: "/descopera-blaj",
-      servicesEyebrow: "Aproape de tine", servicesTitle: "Servicii locale recomandate", servicesLinkLabel: "Vezi toate serviciile",
-      offersEyebrow: "Merită văzut", offersTitle: "Oferte în Blaj", offersLinkLabel: "Toate ofertele",
-      restaurantsEyebrow: "Astăzi", restaurantsTitle: "Unde mâncăm astăzi?", restaurantsLinkLabel: "Vezi toate localurile", restaurantFilters: ["Toate", "Meniul zilei", "Livrare", "Ridicare", "Cafenea"],
-      jobsEyebrow: "Oportunități locale", jobsTitle: "Locuri de muncă în apropiere", jobsLinkLabel: "Vezi toate joburile",
+      eventsVisible: true, eventsEyebrow: "În următoarele zile", eventsTitle: "Ce se întâmplă în Blaj", eventsLinkLabel: "Vezi calendarul", eventsLinkHref: "/evenimente", eventsFiltersLabel: "Filtre evenimente", eventsDetailsLabel: "Detalii", eventsEmptyTitle: "Niciun rezultat aici, deocamdată.", eventsEmptyDescription: "Încearcă un alt filtru sau vezi toate evenimentele.",
+      eventFilters: [
+        { id: "all", value: "Toate", visible: true, deleted: false }, { id: "weekend", value: "Weekend", visible: true, deleted: false }, { id: "children", value: "Copii", visible: true, deleted: false }, { id: "culture", value: "Cultură", visible: true, deleted: false }, { id: "community", value: "Comunitate", visible: true, deleted: false },
+      ],
+      discoverVisible: true, discoverEyebrow: "Orașul nostru", discoverTitle: "Descoperă Blaj", discoverLinkLabel: "Explorează toate locurile", discoverLinkHref: "/descopera-blaj", editorialImage: image("", "", "", "", ""), editorialKicker: "Povestea orașului", editorialTitle: "Un loc în care istoria rămâne vie", editorialCopy: "Reperele Blajului, poveștile oamenilor și locurile care merită privite pe îndelete.", editorialCtaLabel: "Începe explorarea", editorialCtaHref: "/descopera-blaj", discoverMediaLabel: "Vezi Blajul în imagini", discoverMediaHref: "/descopera-blaj#imagini",
+      servicesVisible: true, servicesEyebrow: "Aproape de tine", servicesTitle: "Servicii locale recomandate", servicesLinkLabel: "Vezi toate serviciile", servicesLinkHref: "/afaceri-si-servicii", servicesProfileLabel: "Vezi profilul",
+      offersVisible: true, offersEyebrow: "Merită văzut", offersTitle: "Oferte în Blaj", offersLinkLabel: "Toate ofertele", offersLinkHref: "/oferte-locale", offersConditionsLabel: "Vezi condițiile", offersUntilLabel: "Valabilă până la",
+      restaurantsVisible: true, restaurantsEyebrow: "Astăzi", restaurantsTitle: "Unde mâncăm astăzi?", restaurantsLinkLabel: "Vezi toate localurile", restaurantsLinkHref: "/unde-mancam", restaurantsFiltersLabel: "Filtre restaurante", restaurantsDetailsLabel: "Detalii",
+      restaurantFilters: [
+        { id: "all", value: "Toate", visible: true, deleted: false }, { id: "daily-menu", value: "Meniul zilei", visible: true, deleted: false }, { id: "delivery", value: "Livrare", visible: true, deleted: false }, { id: "pickup", value: "Ridicare", visible: true, deleted: false }, { id: "cafe", value: "Cafenea", visible: true, deleted: false },
+      ],
+      jobsVisible: true, jobsEyebrow: "Oportunități locale", jobsTitle: "Locuri de muncă în apropiere", jobsLinkLabel: "Vezi toate joburile", jobsLinkHref: "/locuri-de-munca", jobsScheduleLabel: "Program", jobsSalaryLabel: "Salariu", jobsDetailsLabel: "Detalii",
+      finalVisible: true,
       finalKicker: "Pentru comunitatea locală", finalTitle: "Ai o informație utilă?", finalCopy: "Adaugă o afacere, ofertă, slujbă, poveste sau un eveniment. Fiecare trimitere este verificată înainte de publicare.", finalCtaLabel: "Alege ce vrei să adaugi", finalCtaHref: "/adauga",
     },
     fields: [
-      { path: "heroImage", label: "Imagine principală", kind: "image", required: true }, text("kicker", "Supratitlu"), text("titleLine", "Prima linie a titlului"), text("emphasizedTitleLine", "Linia evidențiată"), text("intro", "Introducere", "multiline", 1200),
-      text("searchLabel", "Etichetă căutare"), text("searchPlaceholder", "Text orientativ căutare"), text("searchButton", "Buton căutare"), text("primaryCtaLabel", "Acțiune principală"), text("primaryCtaHref", "Link acțiune principală", "internal-link", 300), text("secondaryCtaLabel", "Acțiune secundară"), text("secondaryCtaHref", "Link acțiune secundară", "internal-link", 300),
-      { path: "quickCategories", label: "Categorii rapide", kind: "repeatable", itemFields: [...linkFields, text("icon", "Pictogramă", "enum", 30), { path: "visible", label: "Vizibilă", kind: "toggle" }], options: ["calendar", "restaurant", "services", "offers", "jobs", "children"] },
-      ...["events", "discover", "services", "offers", "restaurants", "jobs"].flatMap(prefix => [text(`${prefix}Eyebrow`, `${prefix} — supratitlu`), text(`${prefix}Title`, `${prefix} — titlu`), text(`${prefix}LinkLabel`, `${prefix} — link`)]),
-      text("eventsEmptyTitle", "Evenimente — stare goală"), text("eventsEmptyDescription", "Evenimente — descriere goală", "multiline", 600), { path: "editorialImage", label: "Editorial — imagine", kind: "image" }, text("editorialKicker", "Editorial — supratitlu"), text("editorialTitle", "Editorial — titlu"), text("editorialCopy", "Editorial — text", "multiline", 1200), text("editorialCtaLabel", "Editorial — acțiune"), text("editorialCtaHref", "Editorial — link", "internal-link", 300),
-      { path: "restaurantFilters", label: "Filtre restaurante", kind: "repeatable", itemFields: [text("value", "Etichetă")], required: true },
-      text("finalKicker", "Încheiere — supratitlu"), text("finalTitle", "Încheiere — titlu"), text("finalCopy", "Încheiere — text", "multiline", 1200), text("finalCtaLabel", "Încheiere — acțiune"), text("finalCtaHref", "Încheiere — link", "internal-link", 300),
+      visibility("heroVisible", "Introducere și imagine principală"),
+      { path: "heroImage", label: "Imagine principală", kind: "image", required: false, group: "Introducere și imagine principală" }, optionalText("kicker", "Supratitlu", "short", 240, "Introducere și imagine principală"), optionalText("titleLine", "Prima linie a titlului", "short", 240, "Introducere și imagine principală"), optionalText("emphasizedTitleLine", "Linia evidențiată", "short", 240, "Introducere și imagine principală"), optionalText("intro", "Introducere", "multiline", 1200, "Introducere și imagine principală"), optionalText("primaryCtaLabel", "Acțiune principală", "short", 240, "Introducere și imagine principală"), optionalText("primaryCtaHref", "Link acțiune principală", "internal-link", 300, "Introducere și imagine principală"), optionalText("secondaryCtaLabel", "Acțiune secundară", "short", 240, "Introducere și imagine principală"), optionalText("secondaryCtaHref", "Link acțiune secundară", "internal-link", 300, "Introducere și imagine principală"),
+      visibility("searchVisible", "Căutare în pagina principală"), optionalText("searchLabel", "Etichetă accesibilă", "short", 240, "Căutare în pagina principală"), optionalText("searchPlaceholder", "Text orientativ", "short", 240, "Căutare în pagina principală"), optionalText("searchButton", "Text buton", "short", 240, "Căutare în pagina principală"),
+      visibility("quickCategoriesVisible", "Categorii rapide"), optionalText("quickCategoriesLabel", "Etichetă accesibilă", "short", 240, "Categorii rapide"),
+      { path: "quickCategories", label: "Categorii", kind: "repeatable", group: "Categorii rapide", itemFields: [...repeatableState, optionalText("label", "Etichetă", "short", 100), optionalText("href", "Link intern", "internal-link", 300), optionalText("icon", "Pictogramă", "enum", 30)], options: ["calendar", "restaurant", "services", "offers", "jobs", "children"] },
+      visibility("eventsVisible", "Evenimente"), optionalText("eventsEyebrow", "Supratitlu", "short", 240, "Evenimente"), optionalText("eventsTitle", "Titlu", "short", 240, "Evenimente"), optionalText("eventsLinkLabel", "Etichetă acțiune", "short", 240, "Evenimente"), optionalText("eventsLinkHref", "Link acțiune", "internal-link", 300, "Evenimente"), optionalText("eventsFiltersLabel", "Etichetă accesibilă filtre", "short", 240, "Evenimente"), optionalText("eventsDetailsLabel", "Etichetă detalii", "short", 100, "Evenimente"), optionalText("eventsEmptyTitle", "Titlu stare goală", "short", 500, "Evenimente"), optionalText("eventsEmptyDescription", "Descriere stare goală", "multiline", 600, "Evenimente"),
+      { path: "eventFilters", label: "Filtre evenimente", kind: "repeatable", group: "Evenimente", itemFields: [...repeatableState, optionalText("value", "Etichetă", "short", 100)] },
+      visibility("discoverVisible", "Editorial Descoperă Blaj"), optionalText("discoverEyebrow", "Supratitlu secțiune", "short", 240, "Editorial Descoperă Blaj"), optionalText("discoverTitle", "Titlu secțiune", "short", 240, "Editorial Descoperă Blaj"), optionalText("discoverLinkLabel", "Etichetă acțiune secțiune", "short", 240, "Editorial Descoperă Blaj"), optionalText("discoverLinkHref", "Link acțiune secțiune", "internal-link", 300, "Editorial Descoperă Blaj"), { path: "editorialImage", label: "Imagine editorială", kind: "image", required: false, group: "Editorial Descoperă Blaj" }, optionalText("editorialKicker", "Supratitlu editorial", "short", 240, "Editorial Descoperă Blaj"), optionalText("editorialTitle", "Titlu editorial", "short", 240, "Editorial Descoperă Blaj"), optionalText("editorialCopy", "Text editorial", "multiline", 1200, "Editorial Descoperă Blaj"), optionalText("editorialCtaLabel", "Acțiune editorială", "short", 240, "Editorial Descoperă Blaj"), optionalText("editorialCtaHref", "Link editorial", "internal-link", 300, "Editorial Descoperă Blaj"), optionalText("discoverMediaLabel", "Etichetă legătură imagini", "short", 240, "Editorial Descoperă Blaj"), optionalText("discoverMediaHref", "Link imagini", "internal-link", 300, "Editorial Descoperă Blaj"),
+      visibility("servicesVisible", "Servicii"), optionalText("servicesEyebrow", "Supratitlu", "short", 240, "Servicii"), optionalText("servicesTitle", "Titlu", "short", 240, "Servicii"), optionalText("servicesLinkLabel", "Etichetă acțiune", "short", 240, "Servicii"), optionalText("servicesLinkHref", "Link acțiune", "internal-link", 300, "Servicii"), optionalText("servicesProfileLabel", "Etichetă profil", "short", 100, "Servicii"),
+      visibility("offersVisible", "Oferte"), optionalText("offersEyebrow", "Supratitlu", "short", 240, "Oferte"), optionalText("offersTitle", "Titlu", "short", 240, "Oferte"), optionalText("offersLinkLabel", "Etichetă acțiune", "short", 240, "Oferte"), optionalText("offersLinkHref", "Link acțiune", "internal-link", 300, "Oferte"), optionalText("offersConditionsLabel", "Etichetă condiții", "short", 100, "Oferte"), optionalText("offersUntilLabel", "Etichetă valabilitate", "short", 100, "Oferte"),
+      visibility("restaurantsVisible", "Restaurante"), optionalText("restaurantsEyebrow", "Supratitlu", "short", 240, "Restaurante"), optionalText("restaurantsTitle", "Titlu", "short", 240, "Restaurante"), optionalText("restaurantsLinkLabel", "Etichetă acțiune", "short", 240, "Restaurante"), optionalText("restaurantsLinkHref", "Link acțiune", "internal-link", 300, "Restaurante"), optionalText("restaurantsFiltersLabel", "Etichetă accesibilă filtre", "short", 240, "Restaurante"), optionalText("restaurantsDetailsLabel", "Etichetă detalii", "short", 100, "Restaurante"), { path: "restaurantFilters", label: "Filtre restaurante", kind: "repeatable", group: "Restaurante", itemFields: [...repeatableState, optionalText("value", "Etichetă", "short", 100)] },
+      visibility("jobsVisible", "Locuri de muncă"), optionalText("jobsEyebrow", "Supratitlu", "short", 240, "Locuri de muncă"), optionalText("jobsTitle", "Titlu", "short", 240, "Locuri de muncă"), optionalText("jobsLinkLabel", "Etichetă acțiune", "short", 240, "Locuri de muncă"), optionalText("jobsLinkHref", "Link acțiune", "internal-link", 300, "Locuri de muncă"), optionalText("jobsScheduleLabel", "Etichetă program", "short", 100, "Locuri de muncă"), optionalText("jobsSalaryLabel", "Etichetă salariu", "short", 100, "Locuri de muncă"), optionalText("jobsDetailsLabel", "Etichetă detalii", "short", 100, "Locuri de muncă"),
+      visibility("finalVisible", "Încheiere"), optionalText("finalKicker", "Supratitlu", "short", 240, "Încheiere"), optionalText("finalTitle", "Titlu", "short", 240, "Încheiere"), optionalText("finalCopy", "Text", "multiline", 1200, "Încheiere"), optionalText("finalCtaLabel", "Acțiune", "short", 240, "Încheiere"), optionalText("finalCtaHref", "Link", "internal-link", 300, "Încheiere"),
     ],
   },
   {
@@ -177,7 +202,10 @@ function validateFields(fields: readonly CmsField[], raw: Record<string, unknown
   for (const field of fields) {
     const value = raw[field.path];
     const label = prefix ? `${prefix} — ${field.label}` : field.label;
-    if (field.kind === "toggle") { output[field.path] = value === true; continue; }
+    if (field.kind === "toggle" || field.kind === "section-visibility" || field.kind === "deletion-marker") {
+      output[field.path] = value === undefined ? field.defaultValue === true : value === true;
+      continue;
+    }
     if (field.kind === "repeatable") {
       if (!Array.isArray(value)) throw new Error(`${label}: lista nu este validă.`);
       if (value.length > 40) throw new Error(`${label}: sunt permise maximum 40 de elemente.`);
@@ -185,7 +213,7 @@ function validateFields(fields: readonly CmsField[], raw: Record<string, unknown
         const normalized = typeof item === "string" ? { value: item } : item;
         if (!normalized || typeof normalized !== "object" || Array.isArray(normalized)) throw new Error(`${label}: element invalid.`);
         const validated = validateFields(field.itemFields || [], normalized as Record<string, unknown>, `${label} ${index + 1}`);
-        return typeof item === "string" && field.itemFields?.length === 1 && field.itemFields[0].path === "value" ? String(validated.value || "") : validated;
+        return typeof item === "string" && field.itemFields?.length === 1 && field.itemFields[0].path === "value" ? String(validated.value ?? "") : validated;
       });
       continue;
     }
@@ -195,7 +223,7 @@ function validateFields(fields: readonly CmsField[], raw: Record<string, unknown
       continue;
     }
     if (field.kind === "image") { output[field.path] = validateImage(value, label, field.required); continue; }
-    const stringValue = typeof value === "string" ? value.trim() : "";
+    const stringValue = typeof value === "string" ? value.trim() : typeof field.defaultValue === "string" ? field.defaultValue : "";
     if (field.required && !stringValue) throw new Error(`${label}: câmp obligatoriu.`);
     if (stringValue.length > (field.maxLength || 240)) throw new Error(`${label}: textul este prea lung.`);
     if (/[<>]/.test(stringValue)) throw new Error(`${label}: HTML-ul nu este permis.`);
@@ -211,7 +239,6 @@ function validateImage(raw: unknown, label: string, required = false): CmsImage 
   const value = resolveCmsImage(raw);
   if (!value.mediaId && value.src && !safeInternalHref(value.src)) throw new Error(`${label}: imaginea trebuie să fie din biblioteca media sau din fișierele locale ale site-ului.`);
   if (required && !value.mediaId && !value.src) throw new Error(`${label}: imagine obligatorie.`);
-  if ((value.mediaId || value.src) && !value.decorative && !value.alt.trim()) throw new Error(`${label}: textul alternativ este obligatoriu.`);
   for (const [name, textValue, max] of [["text alternativ", value.alt, 500], ["legendă", value.caption, 1000], ["autor", value.author, 240], ["licență", value.license, 240]] as const) {
     if (textValue.length > max || /[<>]/.test(textValue)) throw new Error(`${label}: ${name} invalid.`);
   }
@@ -236,7 +263,8 @@ function validateRichTextBlock(raw: unknown, label: string): RichTextBlock {
 
 export function mergeWithSiteDefaults(key: string, value: unknown): Record<string, unknown> {
   const defaults = defaultSiteContent(key);
-  return deepMerge(defaults, validateSiteContent(key, value));
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Conținutul trebuie să fie un obiect valid.");
+  return validateSiteContent(key, deepMerge(defaults, value as Record<string, unknown>));
 }
 
 function deepMerge(defaults: Record<string, unknown>, value: Record<string, unknown>): Record<string, unknown> {

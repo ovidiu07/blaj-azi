@@ -71,6 +71,71 @@ test("publishing enforces approved active media while drafts may reference pendi
   assert.equal((await service.loadPublishedSiteContent("home",db)).heroImage.mediaId,900);
 });
 
+test("homepage accepts intentional blanks, optional links, cleared media, and upgrades legacy records by presence", async () => {
+  const defaults = cms.defaultSiteContent("home");
+  const blank = {
+    ...defaults,
+    titleLine: "",
+    emphasizedTitleLine: "",
+    primaryCtaLabel: "",
+    primaryCtaHref: "",
+    eventsLinkHref: "",
+    heroImage: { src:"", mediaId:null, alt:"", decorative:false, caption:"", author:"", sourceUrl:"", license:"", objectPosition:"center", showCredit:false },
+  };
+  const validated = cms.validateSiteContent("home", blank);
+  assert.equal(validated.titleLine, "");
+  assert.equal(validated.primaryCtaHref, "");
+  assert.deepEqual(validated.heroImage, blank.heroImage);
+  assert.doesNotThrow(() => cms.validateSiteContent("home", { ...blank, editorialCtaHref:"" }));
+  assert.throws(() => cms.validateSiteContent("home", { ...blank, editorialCtaHref:"https://evil.example" }), /linkul intern nu este sigur/);
+
+  const db = await database();
+  const legacy = { titleLine:"Titlu vechi", primaryCtaLabel:"", primaryCtaHref:"", quickCategories:[], restaurantFilters:["Toate"] };
+  await db.prepare("UPDATE site_content_entries SET published_json=?,draft_json=?,schema_version=1 WHERE key='home'").bind(JSON.stringify(legacy),JSON.stringify(legacy)).run();
+  const loaded = await service.loadPublishedSiteContent("home",db);
+  assert.equal(loaded.titleLine,"Titlu vechi");
+  assert.equal(loaded.kicker,defaults.kicker);
+  assert.equal(loaded.primaryCtaLabel,"");
+  assert.deepEqual(loaded.quickCategories,[]);
+  assert.equal(loaded.restaurantFilters[0].value,"Toate");
+  assert.equal(loaded.restaurantFilters[0].visible,true);
+  assert.equal(loaded.restaurantFilters[0].deleted,false);
+});
+
+test("homepage snapshots preserve blank, hidden, deleted, reordered, and cleared states through publish and revision restore", async () => {
+  const db = await database();
+  const home = cms.defaultSiteContent("home");
+  const clearedImage = { src:"", mediaId:null, alt:"", decorative:false, caption:"", author:"", sourceUrl:"", license:"", objectPosition:"center", showCredit:false };
+  const target = {
+    ...home,
+    titleLine:"",
+    primaryCtaLabel:"",
+    primaryCtaHref:"",
+    eventsVisible:false,
+    editorialImage:clearedImage,
+    quickCategories:[home.quickCategories[2],{...home.quickCategories[0],visible:false,deleted:true},home.quickCategories[1]],
+    restaurantFilters:[home.restaurantFilters[2],{...home.restaurantFilters[0],visible:false,deleted:true}],
+  };
+  const saved = await service.saveSiteContentDraft(admin,"home",target,1,db);
+  const adminDraft = await service.loadAdminSiteContent(admin,"home",db);
+  assert.deepEqual(adminDraft.draft,target);
+  assert.notDeepEqual(await service.loadPublishedSiteContent("home",db),target);
+
+  await service.siteContentAction(admin,"home","publish",saved.version,undefined,db);
+  assert.deepEqual(await service.loadPublishedSiteContent("home",db),target);
+
+  const changed = { ...target, titleLine:"Schimbare ulterioară", eventsVisible:true, quickCategories:[] };
+  await service.saveSiteContentDraft(admin,"home",changed,3,db);
+  const revisions = await service.listSiteContentRevisions(admin,"home",db);
+  const exact = revisions.results.find(item => item.action === "updated" && JSON.parse(item.snapshot).titleLine === "");
+  assert.ok(exact);
+  await service.siteContentAction(admin,"home","restore",4,exact.id,db);
+  assert.deepEqual(await service.loadPublishedSiteContent("home",db),target);
+  const restored = await service.loadAdminSiteContent(admin,"home",db);
+  assert.deepEqual(restored.draft,target);
+  assert.deepEqual(restored.published,target);
+});
+
 async function database(){const sqlite=new DatabaseSync(":memory:");for(const name of ["0000_bumpy_vanisher","0001_lame_elektra","0002_great_mastermind","0003_steep_tomorrow_man","0004_curved_meggan","0005_robust_namor","0006_lowly_silverclaw","0007_curly_mandrill"]){sqlite.exec((await source(`../drizzle/${name}.sql`)).replaceAll("--> statement-breakpoint",""));}return new D1(sqlite)}
 async function source(path){return readFile(new URL(path,import.meta.url),"utf8")}
 class D1{constructor(sqlite){this.sqlite=sqlite}prepare(sql){return new Statement(this.sqlite,sql)}async batch(statements){this.sqlite.exec("BEGIN");try{const results=statements.map(statement=>statement.execute());this.sqlite.exec("COMMIT");return results}catch(error){this.sqlite.exec("ROLLBACK");throw error}}}

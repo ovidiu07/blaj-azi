@@ -51,7 +51,7 @@ export async function loadPublishedSiteContent(key: string, db?: D1Database): Pr
     const row = await runtimeDb.prepare("SELECT published_json,schema_version FROM site_content_entries WHERE key=? LIMIT 1").bind(key).first<{ published_json: string; schema_version: number }>();
     if (!row) return defaults;
     const definition = siteContentByKey.get(key);
-    if (!definition || row.schema_version !== definition.schemaVersion) throw new Error("schema_version_mismatch");
+    if (!definition || row.schema_version > definition.schemaVersion) throw new Error("schema_version_mismatch");
     return mergeWithSiteDefaults(key, JSON.parse(row.published_json));
   } catch (error) {
     console.error("site_content_fallback", JSON.stringify({ key, reason: error instanceof Error ? error.message : "unknown" }));
@@ -116,7 +116,7 @@ export async function siteContentAction(account: LocalAccount, key: string, acti
   const next = await nextRevision(key, db);
 
   if (action === "publish") {
-    const draft = validateSiteContent(key, JSON.parse(row.draft_json));
+    const draft = mergeWithSiteDefaults(key, JSON.parse(row.draft_json));
     await assertMediaReferences(draft, true, db);
     const snapshot = JSON.stringify(draft);
     const results = await db.batch([
@@ -129,7 +129,7 @@ export async function siteContentAction(account: LocalAccount, key: string, acti
   }
 
   if (action === "discard") {
-    const published = validateSiteContent(key, JSON.parse(row.published_json));
+    const published = mergeWithSiteDefaults(key, JSON.parse(row.published_json));
     const results = await db.batch([
       db.prepare("UPDATE site_content_entries SET draft_json=published_json,updated_by=?,updated_at=CURRENT_TIMESTAMP,version=version+1 WHERE key=? AND version=?").bind(account.id, key, expectedVersion),
       guardedAuditInsert(db, account.id, "site_content.draft_discarded", key, { fromVersion: expectedVersion, toVersion: expectedVersion + 1 }, expectedVersion + 1),
@@ -142,7 +142,7 @@ export async function siteContentAction(account: LocalAccount, key: string, acti
     if (!Number.isInteger(revisionId) || Number(revisionId) <= 0) throw new PlatformError(400, "Alege o revizie validă.");
     const revision = await db.prepare("SELECT snapshot FROM site_content_revisions WHERE id=? AND entry_key=? LIMIT 1").bind(revisionId, key).first<{ snapshot: string }>();
     if (!revision) throw new PlatformError(404, "Revizia nu există.");
-    const restored = validateSiteContent(key, JSON.parse(revision.snapshot));
+    const restored = mergeWithSiteDefaults(key, JSON.parse(revision.snapshot));
     await assertMediaReferences(restored, true, db);
     const snapshot = JSON.stringify(restored);
     const results = await db.batch([
