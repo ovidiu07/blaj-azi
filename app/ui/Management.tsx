@@ -18,7 +18,8 @@ export const typeLabels: Record<string, string> = {
   daily_menu: "Meniul zilei", place: "Loc de descoperit",
 };
 
-type ContentItem = { id: number; type: string; title: string; slug?:string; excerpt: unknown; status: string; moderation_state: string; updated_at: string; version: number; business_id: number | null; category_id?:number|null; seo_title?:string|null; seo_description?:string|null; body?:unknown;locality?:string;sourceUrl?:string;details?:Record<string,unknown>;publicVersionPreserved?:boolean };
+type EditorMedia = { id:number;url:string;altText:string;approvalStatus:string;mediaStatus:string;width:number|null;height:number|null };
+type ContentItem = { id: number; type: string; title: string; slug?:string; excerpt: unknown; status: string; moderation_state: string; updated_at: string; version: number; business_id: number | null; category_id?:number|null; seo_title?:string|null; seo_description?:string|null; body?:unknown;locality?:string;sourceUrl?:string;details?:Record<string,unknown>;publicVersionPreserved?:boolean;primaryMediaId?:number|null;primaryMediaAltText?:string;primaryMediaState?:"legacy"|"selected"|"none";media?:EditorMedia|null;editor_media_id?:number|null;editor_media_alt?:string|null };
 type BusinessOption = { id: number; name: string };
 type MediaOption = { id: number; title: string | null; original_filename: string | null; approval_status: string; media_status: string };
 
@@ -32,7 +33,7 @@ export function ContentList({ items, admin = false }: { items: ContentItem[]; ad
   const pages=Math.max(1,Math.ceil(filtered.length/pageSize));const visible=filtered.slice((Math.min(page,pages)-1)*pageSize,Math.min(page,pages)*pageSize);
   return <div>
     <div className="management-toolbar"><input aria-label="Caută în conținut" placeholder="Caută după titlu" value={query} onChange={event => {setQuery(event.target.value);setPage(1)}} /><select aria-label="Filtrează după tip" value={type} onChange={event => {setType(event.target.value);setPage(1)}}><option value="">Toate tipurile</option>{Object.entries(typeLabels).map(([value,label]) => <option key={value} value={value}>{label}</option>)}</select><select aria-label="Filtrează după stare" value={status} onChange={event => {setStatus(event.target.value);setPage(1)}}><option value="">Toate stările</option>{Object.entries(statusLabels).map(([value,label]) => <option key={value} value={value}>{label}</option>)}</select><select aria-label="Sortează conținutul" value={sort} onChange={event=>{setSort(event.target.value);setPage(1)}}><option value="updated">Actualizate recent</option><option value="title">Titlu A–Z</option></select><Link className="button" href={admin?"/admin/continut/nou":"/cont/continut/nou"}>Creează</Link></div>
-    <p aria-live="polite">{filtered.length} materiale · pagina {Math.min(page,pages)} din {pages}</p><div className="management-list">{visible.map(item => <article className="management-row" key={item.id}><div><span className={`status-pill status-${item.status}`}>{statusLabels[item.status] || item.status}</span><small>{typeLabels[item.type] || item.type}</small><h3>{item.title || "Ciornă fără titlu"}</h3><p>{plain(item.excerpt) || "Fără rezumat"}</p><time>Salvat {formatDate(item.updated_at)}</time></div><div className="management-actions"><Link href={admin?`/admin/continut/${item.type}/${item.id}`:`/cont/continut/${item.id}`}><Eye /> Deschide</Link>{!admin&&<><ContentAction id={item.id} action="duplicate" label="Duplică" icon="copy" />{item.status === "published" && <ContentAction id={item.id} action="archive" label="Arhivează" icon="archive" />}{item.status === "archived" && <ContentAction id={item.id} action="restore" label="Restaurează" icon="restore" />}</>}</div></article>)}</div>{pages>1&&<nav className="pagination" aria-label="Paginare conținut"><button disabled={page<=1} onClick={()=>setPage(value=>Math.max(1,value-1))}>Pagina anterioară</button><button disabled={page>=pages} onClick={()=>setPage(value=>Math.min(pages,value+1))}>Pagina următoare</button></nav>}
+    <p aria-live="polite">{filtered.length} materiale · pagina {Math.min(page,pages)} din {pages}</p><div className="management-list">{visible.map(item => <article className="management-row" key={item.id}>{item.editor_media_id&&<img className="management-thumbnail" src={`/api/media/${item.editor_media_id}?width=320`} alt={item.editor_media_alt||item.title} width="160" height="107" loading="lazy"/>}<div><span className={`status-pill status-${item.status}`}>{statusLabels[item.status] || item.status}</span><small>{typeLabels[item.type] || item.type}</small><h3>{item.title || "Ciornă fără titlu"}</h3><p>{plain(item.excerpt) || "Fără rezumat"}</p><time>Salvat {formatDate(item.updated_at)}</time></div><div className="management-actions"><Link href={admin?`/admin/continut/${item.type}/${item.id}`:`/cont/continut/${item.id}`}><Eye /> Deschide</Link>{!admin&&<><ContentAction id={item.id} action="duplicate" label="Duplică" icon="copy" />{item.status === "published" && <ContentAction id={item.id} action="archive" label="Arhivează" icon="archive" />}{item.status === "archived" && <ContentAction id={item.id} action="restore" label="Restaurează" icon="restore" />}</>}</div></article>)}</div>{pages>1&&<nav className="pagination" aria-label="Paginare conținut"><button disabled={page<=1} onClick={()=>setPage(value=>Math.max(1,value-1))}>Pagina anterioară</button><button disabled={page>=pages} onClick={()=>setPage(value=>Math.min(pages,value+1))}>Pagina următoare</button></nav>}
     {filtered.length === 0 && <div className="management-empty"><h3>Nu există rezultate</h3><p>Schimbă filtrele sau creează o ciornă nouă.</p></div>}
   </div>;
 }
@@ -47,41 +48,48 @@ export function ContentEditor({ initial, businesses, admin = false }: { initial?
   const [previewItem,setPreviewItem]=useState<ContentItem|undefined>(initial);
   const [mediaOptions, setMediaOptions] = useState<MediaOption[]>([]);
   const [selectedMediaId, setSelectedMediaId] = useState("");
+  const [currentMedia,setCurrentMedia]=useState<EditorMedia|null>(initial?.media||null);
+  const [selectedFile,setSelectedFile]=useState<File|null>(null);
+  const [altText,setAltText]=useState(initial?.media?.altText||initial?.primaryMediaAltText||"");
+  const localPreviewUrl=useMemo(()=>selectedFile?URL.createObjectURL(selectedFile):"",[selectedFile]);
   const formRef=useRef<HTMLFormElement>(null);
+  const fileRef=useRef<HTMLInputElement>(null);const uploadIdRef=useRef("");const inFlightRef=useRef(false);const submitInFlightRef=useRef(false);
   useEffect(() => { if (admin) void fetch("/api/media?scope=all").then(response => response.json()).then((data: { items?: MediaOption[] }) => setMediaOptions((data.items || []).filter(item => item.media_status === "active"))); }, [admin]);
+  useEffect(()=>()=>{if(localPreviewUrl)URL.revokeObjectURL(localPreviewUrl)},[localPreviewUrl]);
   function readPayload(element:HTMLFormElement){
     const form = new FormData(element);
     const media = form.get("media");
     const details: Record<string, unknown> = {};
     for (const [key, value] of form.entries()) if (key.startsWith("detail.")) details[key.slice(7)] = value;
     for (const key of ["familyFriendly","delivery","pickup","transport"]) details[key] = form.has(`detail.${key}`);
-    const payload = { type, title: form.get("title"), slug: form.get("slug"), excerpt: form.get("excerpt"), body: form.get("body"), locality: form.get("locality"), categoryId: form.get("categoryId") ? Number(form.get("categoryId")) : null, businessId: form.get("businessId") ? Number(form.get("businessId")) : null, sourceUrl: form.get("sourceUrl"), seoTitle: form.get("seoTitle"), seoDescription: form.get("seoDescription"), version: saved?.version, details };
+    const payload = { type, title: form.get("title"), slug: form.get("slug"), excerpt: form.get("excerpt"), body: form.get("body"), locality: form.get("locality"), categoryId: form.get("categoryId") ? Number(form.get("categoryId")) : null, businessId: form.get("businessId") ? Number(form.get("businessId")) : null, sourceUrl: form.get("sourceUrl"), seoTitle: form.get("seoTitle"), seoDescription: form.get("seoDescription"), version: saved?.version, primaryMediaId:currentMedia?.id??null,primaryMediaAltText:altText,primaryMediaState:(currentMedia||selectedFile)?"selected" as const:"none" as const, details };
     return{form,media,details,payload};
   }
   async function saveDraft(element:HTMLFormElement) {
-    setState("saving"); setMessage("");setErrors({});
-    const {form,media,details,payload}=readPayload(element);
-    const response = await fetch(saved ? `/api/account/content/${saved.id}` : "/api/account/content", { method: saved ? "PATCH" : "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(payload) });
-    const data = await response.json() as ContentItem & { error?: string };
-    if (!response.ok) { setState("error"); setMessage(data.error || "Ciorna nu a putut fi salvată."); return null; }
-    const next={ ...(saved || { type, status: "draft", moderation_state: "draft", updated_at: new Date().toISOString(), business_id: payload.businessId }), ...data,title:String(form.get("title")||""),excerpt:form.get("excerpt"),body:form.get("body"),locality:String(form.get("locality")||""),sourceUrl:String(form.get("sourceUrl")||""),details } as ContentItem;
-    setSaved(next);setPreviewItem(next);
-    setState("saved"); setMessage("Ciorna a fost salvată.");
-    const contentId=Number(saved?.id||data.id);
-    if(admin&&selectedMediaId&&contentId){const attachResponse=await fetch(`/api/media/${selectedMediaId}`,{method:"PATCH",headers:{"content-type":"application/json"},body:JSON.stringify({action:"attach",contentId})});if(!attachResponse.ok){const attachData=await attachResponse.json() as{error?:string};setState("error");setMessage(`Ciorna a fost salvată, dar imaginea existentă nu a fost atașată: ${attachData.error||"eroare necunoscută"}`)}}
-    if(media instanceof File&&media.size){const upload=new FormData();upload.set("file",media);upload.set("altText",String(form.get("altText")||""));upload.set("title",String(form.get("title")||""));upload.set("contentId",String(contentId));if(payload.businessId)upload.set("businessId",String(payload.businessId));const mediaResponse=await fetch("/api/media",{method:"POST",body:upload});if(!mediaResponse.ok){const mediaData=await mediaResponse.json() as{error?:string};setState("error");setMessage(`Ciorna a fost salvată, dar imaginea nu: ${mediaData.error||"eroare necunoscută"}`)}}
-    if (!initial && data.id) history.replaceState(null, "", admin?`/admin/continut/${type}/${data.id}`:`/cont/continut/${data.id}`);
-    return next;
+    if(inFlightRef.current)return null;inFlightRef.current=true;setState("saving");setMessage("");setErrors({});
+    try{
+      const {form,details,payload}=readPayload(element);let selected=currentMedia;
+      if(admin&&selectedMediaId&&!selectedFile){const option=mediaOptions.find(item=>item.id===Number(selectedMediaId));if(option)selected={id:option.id,url:`/api/media/${option.id}`,altText,approvalStatus:option.approval_status,mediaStatus:option.media_status,width:null,height:null}}
+      if(selectedFile){if(!altText.trim()){setState("error");setMessage("Adaugă un text alternativ semnificativ pentru imagine.");return null}const upload=new FormData();upload.set("file",selectedFile);upload.set("altText",altText);upload.set("title",String(form.get("title")||""));upload.set("uploadId",uploadIdRef.current||(uploadIdRef.current=crypto.randomUUID()));if(payload.businessId)upload.set("businessId",String(payload.businessId));const mediaResponse=await fetch("/api/media",{method:"POST",body:upload});const mediaData=await mediaResponse.json() as{error?:string;media?:EditorMedia};if(!mediaResponse.ok||!mediaData.media){setState("error");setMessage(mediaData.error||"Imaginea nu a putut fi încărcată. Încearcă din nou.");return null}selected=mediaData.media;setCurrentMedia(selected);setSelectedFile(null);if(fileRef.current)fileRef.current.value=""}
+      const finalPayload={...payload,primaryMediaId:selected?.id??null,primaryMediaAltText:selected?altText:"",primaryMediaState:selected?"selected":"none"};
+      const response=await fetch(saved?`/api/account/content/${saved.id}`:"/api/account/content",{method:saved?"PATCH":"POST",headers:{"content-type":"application/json"},body:JSON.stringify(finalPayload)});const data=await response.json() as ContentItem&{error?:string};
+      if(!response.ok){setState("error");setMessage(data.error||"Ciorna nu a putut fi salvată.");return null}
+      const next={...(saved||{type,status:"draft",moderation_state:"draft",updated_at:new Date().toISOString(),business_id:payload.businessId}),...data,title:String(form.get("title")||""),excerpt:form.get("excerpt"),body:form.get("body"),locality:String(form.get("locality")||""),sourceUrl:String(form.get("sourceUrl")||""),details,media:data.media??selected} as ContentItem;
+      setSaved(next);setPreviewItem(next);setCurrentMedia(next.media||null);setState("saved");setMessage("Ciorna a fost salvată.");uploadIdRef.current="";
+      if(!initial&&data.id)history.replaceState(null,"",admin?`/admin/continut/${type}/${data.id}`:`/cont/continut/${data.id}`);return next;
+    }finally{inFlightRef.current=false}
   }
   async function submitForReview(){
-    const element=formRef.current;if(!element)return;
-    if(type==="business"&&!validateBusinessForm(element))return;
-    const next=await saveDraft(element);if(!next)return;
-    setState("saving");setMessage("");
-    const response=await fetch(`/api/account/content/${next.id}/actions`,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({action:"submit"})});
-    const data=await response.json() as{error?:string};
-    if(!response.ok){setState("error");setMessage(data.error||"Materialul nu a putut fi trimis.");return}
-    location.reload();
+    if(submitInFlightRef.current)return;submitInFlightRef.current=true;
+    try{const element=formRef.current;if(!element)return;
+      if(type==="business"&&!validateBusinessForm(element))return;
+      const next=await saveDraft(element);if(!next)return;
+      setState("saving");setMessage("");
+      const response=await fetch(`/api/account/content/${next.id}/actions`,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({action:"submit",expectedVersion:next.version})});
+      const data=await response.json() as{error?:string};
+      if(!response.ok){setState("error");setMessage(data.error||"Materialul nu a putut fi trimis.");return}
+      location.reload();
+    }finally{submitInFlightRef.current=false}
   }
   function validateBusinessForm(element:HTMLFormElement){
     const {form}=readPayload(element);const next:Record<string,string>={};
@@ -94,14 +102,14 @@ export function ContentEditor({ initial, businesses, admin = false }: { initial?
     setState("error");setMessage("Verifică informațiile obligatorii pentru trimitere.");
     const first=Object.keys(next)[0];requestAnimationFrame(()=>{const target=first==="excerpt"?element.querySelector<HTMLElement>(".rte-field .rte-editor"):element.querySelector<HTMLElement>(`[data-publication-field="${first}"]`);target?.focus()});return false;
   }
-  function showPreview(){const element=formRef.current;if(!element)return;const{form,details,payload}=readPayload(element);const title=String(form.get("title")||"");let excerpt="";try{excerpt=richTextToPlainText(form.get("excerpt")||"")}catch{/* handled below */}if(!title.trim()&&!excerpt){setState("error");setMessage("Adaugă un titlu sau un rezumat pentru o previzualizare relevantă.");return}setPreviewItem({...(saved||{}),id:saved?.id||0,type,title,excerpt:form.get("excerpt"),body:form.get("body"),locality:String(payload.locality||""),details} as ContentItem);setPreview(value=>!value);setMessage("")}
+  function showPreview(){const element=formRef.current;if(!element||state==="saving")return;const{form,details,payload}=readPayload(element);const title=String(form.get("title")||"");let excerpt="";try{excerpt=richTextToPlainText(form.get("excerpt")||"")}catch{/* handled below */}if(!title.trim()&&!excerpt){setState("error");setMessage("Adaugă un titlu sau un rezumat pentru o previzualizare relevantă.");return}const media=localPreviewUrl?{id:0,url:localPreviewUrl,altText,approvalStatus:"local",mediaStatus:"active",width:null,height:null}:currentMedia;setPreviewItem({...(saved||{}),id:saved?.id||0,type,title,excerpt:form.get("excerpt"),body:form.get("body"),locality:String(payload.locality||""),details,media} as ContentItem);setPreview(value=>!value);setMessage("")}
   const locked = saved?.status === "pending_review" || saved?.moderation_state === "pending_review" || saved?.status === "soft_deleted";
   return <>
     <form ref={formRef} className="content-editor" onSubmit={event=>{event.preventDefault();void saveDraft(event.currentTarget)}} noValidate={type==="business"}>
       <div className="editor-status"><span className={`status-pill status-${saved?.status || "draft"}`}>{statusLabels[saved?.status || "draft"]}</span><span>{saved ? `Versiunea ${saved.version}` : "Ciornă nouă"}</span>{message && <strong className={state === "error" ? "error-message" : "success-message"} role="status">{message}</strong>}</div>
       {(saved?.status === "pending_review"||saved?.moderation_state==="pending_review") && <div className="moderation-note"><strong>Materialul este în verificare.</strong><span>Retrage trimiterea înainte de a-l modifica. Versiunea publicată, dacă există, rămâne neschimbată.</span></div>}
       {saved?.status === "soft_deleted" && <div className="moderation-note"><strong>Materialul este șters recuperabil.</strong><span>Un administrator trebuie să îl recupereze înainte de editare.</span></div>}
-      <fieldset disabled={locked || state === "saving"}><legend>Tipul materialului</legend><select name="type" value={type} onChange={event => setType(event.target.value)} disabled={Boolean(saved)}>{Object.entries(typeLabels).filter(([value]) => value !== "article" || businesses.length > 0).map(([value,label]) => <option key={value} value={value}>{label}</option>)}</select></fieldset>
+      <fieldset disabled={locked || state === "saving"}><legend>Tipul materialului</legend><select name="type" value={type} onChange={event => setType(event.target.value)} disabled={Boolean(saved)}>{Object.entries(typeLabels).filter(([value]) => admin || value !== "article").map(([value,label]) => <option key={value} value={value}>{label}</option>)}</select></fieldset>
       {businesses.length > 0 && <label>Afacerea asociată<select name="businessId" defaultValue={initial?.business_id || ""}><option value="">Fără afacere</option>{businesses.map(business => <option value={business.id} key={business.id}>{business.name}</option>)}</select></label>}
       <label>Titlu<input name="title" required={type!=="business"} aria-invalid={Boolean(errors.title)} aria-describedby={errors.title?"title-error":undefined} data-publication-field="title" maxLength={240} defaultValue={initial?.title ?? ""} disabled={locked} />{errors.title&&<span id="title-error" className="error-message">{errors.title}</span>}</label>
       <div className="editor-grid"><label>Slug unic<input name="slug" pattern="[a-z0-9]+(?:-[a-z0-9]+)*" maxLength={120} defaultValue={initial?.slug??""} placeholder="generat automat din titlu" disabled={locked}/><small>Opțional. Dacă rămâne gol, este generat în siguranță din titlu.</small></label><label>ID categorie<input name="categoryId" type="number" min="1" defaultValue={initial?.category_id??(Number(initial?.details?.category_id)||"")} disabled={locked}/><small>Opțional pentru afaceri.</small></label><label>Localitate<input name="locality" required={type!=="business"} aria-invalid={Boolean(errors.locality)} aria-describedby={errors.locality?"locality-error":undefined} data-publication-field="locality" maxLength={120} defaultValue={initial?.locality??"Blaj"} disabled={locked} />{errors.locality&&<span id="locality-error" className="error-message">{errors.locality}</span>}</label><label>Sursă oficială sau de verificare<input name="sourceUrl" type="url" maxLength={800} defaultValue={initial?.sourceUrl??""} disabled={locked} /></label></div>
@@ -111,11 +119,11 @@ export function ContentEditor({ initial, businesses, admin = false }: { initial?
       )}
       <TypeFields type={type} locked={locked} details={initial?.details||{}} errors={errors} />
       <fieldset className="editor-grid"><legend>SEO</legend><label>Titlu SEO<input name="seoTitle" maxLength={180} defaultValue={initial?.seo_title||String(initial?.details?.seo_title||"")} disabled={locked}/></label><label>Descriere SEO<textarea name="seoDescription" maxLength={300} rows={3} defaultValue={initial?.seo_description||String(initial?.details?.seo_description||"")} disabled={locked}/></label></fieldset>
-      {admin&&<label>Imagine existentă din bibliotecă<select value={selectedMediaId} onChange={event=>setSelectedMediaId(event.target.value)} disabled={locked}><option value="">Nu atașa o imagine existentă</option>{mediaOptions.map(item=><option value={item.id} key={item.id}>{item.title||item.original_filename||`Imagine #${item.id}`} · {item.approval_status}</option>)}</select></label>}
-      <label className="media-upload"><Upload /><span>Încarcă o fotografie în biblioteca media. Ea devine publică numai după aprobare.</span><input name="media" type="file" accept="image/jpeg,image/png,image/webp" disabled={locked} /><span>Alt text pentru imagine</span><input name="altText" maxLength={500} disabled={locked}/></label>
-      <div className="editor-buttons"><button className="button" type="submit" disabled={locked || state === "saving"}><Save /> {state === "saving" ? "Se salvează…" : "Salvează ciorna"}</button><button className="button button-outline" type="button" onClick={showPreview}><Eye /> Previzualizează</button>{saved&&(saved.status==="pending_review"||saved.moderation_state==="pending_review")?<ContentAction id={saved.id} action="withdraw" label="Retrage trimiterea" icon="x"/>:<button type="button" onClick={()=>void submitForReview()} disabled={state==="saving"}><Send/>Trimite spre verificare</button>}{saved && ["draft","needs_changes","rejected"].includes(saved.status) && <ContentAction id={saved.id} action="delete" label="Șterge ciorna" icon="trash" danger />}</div>
+      {admin&&<label>Imagine existentă din bibliotecă<select value={selectedMediaId} onChange={event=>setSelectedMediaId(event.target.value)} disabled={locked||state==="saving"}><option value="">Nu atașa o imagine existentă</option>{mediaOptions.map(item=><option value={item.id} key={item.id}>{item.title||item.original_filename||`Imagine #${item.id}`} · {item.approval_status}</option>)}</select></label>}
+      <fieldset className="media-upload" disabled={locked||state==="saving"}><legend>Imagine principală</legend>{(localPreviewUrl||currentMedia)&&<div className="editor-media-preview"><img src={localPreviewUrl||currentMedia?.url} alt={altText} width={currentMedia?.width||960} height={currentMedia?.height||640}/><button type="button" className="danger-action" onClick={()=>{setSelectedFile(null);setCurrentMedia(null);setAltText("");setSelectedMediaId("");uploadIdRef.current="";if(fileRef.current)fileRef.current.value=""}}><Trash2/>Elimină imaginea</button></div>}<label><Upload/><span>{localPreviewUrl||currentMedia?"Înlocuiește fotografia":"Încarcă o fotografie"}. Devine publică numai după aprobarea conținutului și a imaginii.</span><input ref={fileRef} name="media" type="file" accept="image/jpeg,image/png,image/webp" onChange={event=>{const file=event.target.files?.[0]||null;setSelectedFile(file);uploadIdRef.current=file?crypto.randomUUID():""}} /></label><label>Text alternativ pentru imagine<input name="altText" maxLength={500} value={altText} onChange={event=>setAltText(event.target.value)}/></label><small>JPEG, PNG sau WebP, maximum 8 MB. Textul alternativ descrie informația transmisă de fotografie.</small></fieldset>
+      <div className="editor-buttons"><button className="button" type="submit" disabled={locked || state === "saving"}><Save /> {state === "saving" ? "Se salvează…" : "Salvează ciorna"}</button><button className="button button-outline" type="button" onClick={showPreview} disabled={state==="saving"}><Eye /> Previzualizează</button>{saved&&(saved.status==="pending_review"||saved.moderation_state==="pending_review")?<ContentAction id={saved.id} action="withdraw" label="Retrage trimiterea" icon="x" expectedVersion={saved.version}/>:<button type="button" onClick={()=>void submitForReview()} disabled={state==="saving"}><Send/>Trimite spre verificare</button>}{saved && ["draft","needs_changes","rejected"].includes(saved.status) && <ContentAction id={saved.id} action="delete" label="Șterge ciorna" icon="trash" danger expectedVersion={saved.version}/>}</div>
     </form>
-    {preview&&previewItem&&<StructuredDraftPreview item={{id:previewItem.id,type:previewItem.type||type,title:previewItem.title||"Titlul materialului",excerpt:previewItem.excerpt,body:previewItem.body,locality:previewItem.locality,details:previewItem.details}}/>}
+    {preview&&previewItem&&<StructuredDraftPreview item={{id:previewItem.id,type:previewItem.type||type,title:previewItem.title||"Titlul materialului",excerpt:previewItem.excerpt,body:previewItem.body,locality:previewItem.locality,details:previewItem.details,media:previewItem.media}}/>}
   </>;
 }
 
@@ -132,13 +140,13 @@ function TypeFields({ type, locked,details,errors }: { type: string; locked: boo
   return null;
 }
 
-export function ContentAction({ id, action, label, icon, danger = false }: { id: number; action: string; label: string; icon: string; danger?: boolean }) {
+export function ContentAction({ id, action, label, icon, danger = false,expectedVersion }: { id: number; action: string; label: string; icon: string; danger?: boolean;expectedVersion?:number }) {
   const [busy, setBusy] = useState(false);
   const Icon = icon === "copy" ? Copy : icon === "archive" ? Archive : icon === "restore" ? RotateCcw : icon === "trash" ? Trash2 : icon === "x" ? X : Send;
   async function run() {
     if (["archive","withdraw","delete"].includes(action) && !window.confirm(`Confirmi acțiunea „${label}”?`)) return;
     setBusy(true);
-    const response = await fetch(`/api/account/content/${id}/actions`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action }) });
+    const response = await fetch(`/api/account/content/${id}/actions`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action,expectedVersion }) });
     const data = await response.json() as { error?: string };
     if (!response.ok) window.alert(data.error || "Acțiunea nu a putut fi finalizată."); else location.reload();
     setBusy(false);

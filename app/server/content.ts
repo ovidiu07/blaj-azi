@@ -28,6 +28,7 @@ export const contentTypes = [
   "place",
 ] as const;
 export type ContentType = (typeof contentTypes)[number];
+export const ordinaryUserContentTypes = contentTypes.filter((type) => type !== "article") as Exclude<ContentType, "article">[];
 
 const userTypes = new Set<ContentType>(["business", "community_post", "local_story", "event", "place"]);
 const businessTypes = new Set<ContentType>(["business_update", "offer", "event", "job", "restaurant", "daily_menu"]);
@@ -45,6 +46,9 @@ export type ContentInput = {
   sourceUrl?: string;
   seoTitle?: string;
   seoDescription?: string;
+  primaryMediaId?: number | null;
+  primaryMediaAltText?: string;
+  primaryMediaState?: "legacy" | "selected" | "none";
   details?: Record<string, unknown>;
 };
 
@@ -62,8 +66,17 @@ type ContentRow = {
   featured: number;
   version: number;
   published_snapshot: string | null;
+  primary_media_id: number | null;
+  primary_media_alt_text: string | null;
+  primary_media_state: "legacy" | "selected" | "none";
+  published_media_id: number | null;
+  published_media_alt_text: string | null;
+  published_media_state: "legacy" | "selected" | "none";
   deleted_at: string | null;
 };
+
+type MediaSelection = { state: "legacy" | "selected" | "none"; id: number | null; altText: string };
+type EditorMedia = { id:number; url:string; altText:string; approvalStatus:string; mediaStatus:string; width:number|null; height:number|null };
 
 function randomId(): number {
   const values = new Uint32Array(1);
@@ -74,6 +87,34 @@ function randomId(): number {
 function numberOrNull(value: unknown): number | null {
   const parsed = Number(value);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+}
+
+async function normalizeMediaSelection(account: LocalAccount, raw: Partial<ContentInput>, current?: MediaSelection): Promise<MediaSelection> {
+  const supplied = Object.prototype.hasOwnProperty.call(raw, "primaryMediaState") || Object.prototype.hasOwnProperty.call(raw, "primaryMediaId") || Object.prototype.hasOwnProperty.call(raw, "primaryMediaAltText");
+  if (!supplied && current) return current;
+  const id = numberOrNull(raw.primaryMediaId);
+  const state = raw.primaryMediaState === "none" || !id ? "none" : "selected";
+  const altText = cleanText(raw.primaryMediaAltText, 500);
+  if (state === "none") return { state, id: null, altText: "" };
+  const media = await getRuntimeDb().prepare("SELECT owner_user_id,media_status FROM media_assets WHERE id=? LIMIT 1").bind(id).first<{owner_user_id:number|null;media_status:string}>();
+  if (!media || media.media_status !== "active") throw new PlatformError(409, "Imaginea selectată nu mai este disponibilă.", "media_unavailable");
+  if (!isAdmin(account) && media.owner_user_id !== account.id) throw new PlatformError(403, "Nu ai permisiunea să modifici acest conținut.", "media_forbidden");
+  return { state, id, altText };
+}
+
+async function editorMedia(db: D1Database, contentId: number, selection: MediaSelection): Promise<EditorMedia | null> {
+  if (selection.state === "none") return null;
+  const row = selection.state === "selected" && selection.id
+    ? await db.prepare("SELECT id,alt_text,approval_status,media_status,width,height FROM media_assets WHERE id=? AND media_status='active' LIMIT 1").bind(selection.id).first<{id:number;alt_text:string|null;approval_status:string;media_status:string;width:number|null;height:number|null}>()
+    : await db.prepare("SELECT id,alt_text,approval_status,media_status,width,height FROM media_assets WHERE content_id=? AND media_status='active' ORDER BY created_at DESC,id DESC LIMIT 1").bind(contentId).first<{id:number;alt_text:string|null;approval_status:string;media_status:string;width:number|null;height:number|null}>();
+  return row ? { id:row.id, url:`/api/media/${row.id}`, altText:selection.altText || row.alt_text || "", approvalStatus:row.approval_status, mediaStatus:row.media_status, width:row.width, height:row.height } : null;
+}
+
+function attachMedia(db:D1Database, media:MediaSelection, contentId:number, businessId:number|null, mutationId?:string) {
+  if (media.state !== "selected" || !media.id) return null;
+  const guard = mutationId ? " AND EXISTS (SELECT 1 FROM content_records WHERE id=? AND last_mutation_id=?)" : "";
+  return db.prepare(`UPDATE media_assets SET content_id=?,business_id=COALESCE(business_id,?),alt_text=?,orphaned_at=NULL WHERE id=?${guard}`)
+    .bind(contentId,businessId,media.altText,media.id,...(mutationId?[contentId,mutationId]:[]));
 }
 
 function richValue(value: unknown, label: string, maxCharacters: number, required = false): string {
@@ -188,36 +229,37 @@ function typeInsert(db: D1Database, input: ContentInput, entityId: number, conte
   throw new PlatformError(400, "Tip de conținut neacceptat.");
 }
 
-function typeUpdate(db: D1Database, input: ContentInput, entityId: number, title: string, account: LocalAccount) {
+function typeUpdate(db: D1Database, input: ContentInput, entityId: number, title: string, account: LocalAccount, mutation?:{contentId:number;mutationId:string}) {
   const details = input.details ?? {};
   const locality = cleanText(input.locality ?? detailValue(details, "locality"), 120, input.type !== "business");
   const businessId = numberOrNull(input.businessId);
   const categoryId = numberOrNull(input.categoryId);
   const sourceUrl = externalOrNull(input.sourceUrl, "Sursa");
   const excerpt = richValue(input.excerpt, "Rezumat", 6_000);
-  if (postTypes.has(input.type)) return db.prepare("UPDATE posts SET body=?,business_id=?,category_id=?,locality=?,source_information=?,seo_title=?,seo_description=? WHERE id=?")
-    .bind(richValue(input.body, "Conținut", 30_000, true), businessId, categoryId, locality, sourceUrl || null, cleanText(input.seoTitle,180)||null, cleanText(input.seoDescription,300)||null, entityId);
-  if (input.type === "business") return db.prepare("UPDATE businesses SET name=?,category_id=?,locality=?,address=?,phone=?,website=?,contact_email=?,whatsapp=?,social_links=?,description=?,updated_at=CURRENT_TIMESTAMP,version=version+1 WHERE id=?")
-    .bind(title, categoryId, locality, cleanText(detailValue(details,"address"),300)||null, cleanText(detailValue(details,"phone"),60)||null, externalOrNull(detailValue(details,"website"),"Website-ul"), cleanText(detailValue(details,"contactEmail","contact_email"),254)||null, cleanText(detailValue(details,"whatsapp"),60)||null, cleanText(detailValue(details,"socialLinks","social_links"),2000)||null, excerpt, entityId);
-  if (input.type === "event") return db.prepare("UPDATE events SET title=?,category_id=?,organizer=?,locality=?,venue=?,starts_at=?,ends_at=?,ticket_info=?,description=?,family_friendly=?,accessibility=?,address=?,image_url=?,source_url=?,updated_at=CURRENT_TIMESTAMP WHERE id=?")
-    .bind(title, categoryId, cleanText(details.organizer,240)||null, locality, cleanText(details.venue,240)||null, cleanText(details.startsAt,40,true), cleanText(details.endsAt,40)||null, cleanText(details.ticketInfo,500)||null, excerpt, details.familyFriendly?1:0, cleanText(details.accessibility,500)||null, cleanText(details.address,300)||null, externalOrNull(details.imageUrl,"Imaginea externă"), sourceUrl, entityId);
-  if (input.type === "offer") return db.prepare("UPDATE offers SET business_id=?,title=?,starts_at=?,ends_at=?,price=?,old_price=?,terms=?,description=?,availability=?,image_url=?,source_url=?,updated_at=CURRENT_TIMESTAMP WHERE id=?")
-    .bind(businessId, title, cleanText(details.startsAt,40,true), cleanText(details.endsAt,40,true), numberOrNull(details.price), numberOrNull(details.oldPrice), richValue(details.terms,"Condiții",3_000), excerpt, cleanText(details.availability,120)||"active", externalOrNull(details.imageUrl,"Imaginea externă"), sourceUrl, entityId);
-  if (input.type === "job") return db.prepare("UPDATE jobs SET business_id=?,title=?,company=?,locality=?,contract_type=?,work_arrangement=?,schedule=?,shift=?,salary_min=?,salary_max=?,transport_provided=?,responsibilities=?,requirements=?,benefits=?,apply_url=?,application_method=?,deadline=?,source_url=?,updated_at=CURRENT_TIMESTAMP WHERE id=?")
-    .bind(businessId, title, cleanText(details.company,240,true), locality, cleanText(details.contractType,120)||null, cleanText(details.workArrangement,120)||null, cleanText(details.schedule,300)||null, cleanText(details.shift,120)||null, numberOrNull(details.salaryMin), numberOrNull(details.salaryMax), details.transport?1:0, richValue(details.responsibilities,"Responsabilități",8_000), richValue(details.requirements,"Cerințe",8_000), richValue(details.benefits,"Beneficii",8_000), externalOrNull(details.applyUrl,"Linkul de aplicare"), cleanText(details.applicationMethod,1000)||null, cleanText(details.deadline,40)||null, sourceUrl, entityId);
-  if (input.type === "restaurant") return db.prepare("UPDATE restaurants SET business_id=?,name=?,cuisine=?,delivery=?,pickup=?,dietary_options=?,description=?,image_url=?,source_url=?,updated_at=CURRENT_TIMESTAMP WHERE id=?")
-    .bind(businessId, title, cleanText(details.cuisine,200)||null, details.delivery?1:0, details.pickup?1:0, cleanText(details.dietaryOptions,600)||null, excerpt, externalOrNull(details.imageUrl,"Imaginea externă"), sourceUrl, entityId);
-  if (input.type === "daily_menu") return db.prepare("UPDATE daily_menus SET restaurant_id=?,menu_date=?,soup=?,main_dish=?,side_dish=?,dessert=?,price=?,order_deadline=?,availability=?,owner_user_id=?,version=version+1,updated_at=CURRENT_TIMESTAMP WHERE id=?")
-    .bind(numberOrNull(details.restaurantId), cleanText(details.menuDate,40,true), cleanText(details.soup,500)||null, cleanText(details.mainDish,500)||null, cleanText(details.sideDish,500)||null, cleanText(details.dessert,500)||null, numberOrNull(details.price), cleanText(details.orderDeadline,80)||null, cleanText(details.availability,100)||"active", account.id, entityId);
-  if (input.type === "place") return db.prepare("UPDATE places SET title=?,address=?,description=?,accessibility=?,locality=?,image_url=?,source_url=?,updated_at=CURRENT_TIMESTAMP WHERE id=?")
-    .bind(title, cleanText(details.address,300)||null, excerpt, cleanText(details.accessibility,500)||null, locality, externalOrNull(details.imageUrl,"Imaginea externă"), sourceUrl, entityId);
+  const guard=mutation?" AND EXISTS (SELECT 1 FROM content_records WHERE id=? AND last_mutation_id=?)":"";const guardValues=mutation?[mutation.contentId,mutation.mutationId]:[];
+  if (postTypes.has(input.type)) return db.prepare(`UPDATE posts SET body=?,business_id=?,category_id=?,locality=?,source_information=?,seo_title=?,seo_description=? WHERE id=?${guard}`)
+    .bind(richValue(input.body, "Conținut", 30_000, true), businessId, categoryId, locality, sourceUrl || null, cleanText(input.seoTitle,180)||null, cleanText(input.seoDescription,300)||null, entityId,...guardValues);
+  if (input.type === "business") return db.prepare(`UPDATE businesses SET name=?,category_id=?,locality=?,address=?,phone=?,website=?,contact_email=?,whatsapp=?,social_links=?,description=?,updated_at=CURRENT_TIMESTAMP,version=version+1 WHERE id=?${guard}`)
+    .bind(title, categoryId, locality, cleanText(detailValue(details,"address"),300)||null, cleanText(detailValue(details,"phone"),60)||null, externalOrNull(detailValue(details,"website"),"Website-ul"), cleanText(detailValue(details,"contactEmail","contact_email"),254)||null, cleanText(detailValue(details,"whatsapp"),60)||null, cleanText(detailValue(details,"socialLinks","social_links"),2000)||null, excerpt, entityId,...guardValues);
+  if (input.type === "event") return db.prepare(`UPDATE events SET title=?,category_id=?,organizer=?,locality=?,venue=?,starts_at=?,ends_at=?,ticket_info=?,description=?,family_friendly=?,accessibility=?,address=?,image_url=?,source_url=?,updated_at=CURRENT_TIMESTAMP WHERE id=?${guard}`)
+    .bind(title, categoryId, cleanText(details.organizer,240)||null, locality, cleanText(details.venue,240)||null, cleanText(details.startsAt,40,true), cleanText(details.endsAt,40)||null, cleanText(details.ticketInfo,500)||null, excerpt, details.familyFriendly?1:0, cleanText(details.accessibility,500)||null, cleanText(details.address,300)||null, externalOrNull(details.imageUrl,"Imaginea externă"), sourceUrl, entityId,...guardValues);
+  if (input.type === "offer") return db.prepare(`UPDATE offers SET business_id=?,title=?,starts_at=?,ends_at=?,price=?,old_price=?,terms=?,description=?,availability=?,image_url=?,source_url=?,updated_at=CURRENT_TIMESTAMP WHERE id=?${guard}`)
+    .bind(businessId, title, cleanText(details.startsAt,40,true), cleanText(details.endsAt,40,true), numberOrNull(details.price), numberOrNull(details.oldPrice), richValue(details.terms,"Condiții",3_000), excerpt, cleanText(details.availability,120)||"active", externalOrNull(details.imageUrl,"Imaginea externă"), sourceUrl, entityId,...guardValues);
+  if (input.type === "job") return db.prepare(`UPDATE jobs SET business_id=?,title=?,company=?,locality=?,contract_type=?,work_arrangement=?,schedule=?,shift=?,salary_min=?,salary_max=?,transport_provided=?,responsibilities=?,requirements=?,benefits=?,apply_url=?,application_method=?,deadline=?,source_url=?,updated_at=CURRENT_TIMESTAMP WHERE id=?${guard}`)
+    .bind(businessId, title, cleanText(details.company,240,true), locality, cleanText(details.contractType,120)||null, cleanText(details.workArrangement,120)||null, cleanText(details.schedule,300)||null, cleanText(details.shift,120)||null, numberOrNull(details.salaryMin), numberOrNull(details.salaryMax), details.transport?1:0, richValue(details.responsibilities,"Responsabilități",8_000), richValue(details.requirements,"Cerințe",8_000), richValue(details.benefits,"Beneficii",8_000), externalOrNull(details.applyUrl,"Linkul de aplicare"), cleanText(details.applicationMethod,1000)||null, cleanText(details.deadline,40)||null, sourceUrl, entityId,...guardValues);
+  if (input.type === "restaurant") return db.prepare(`UPDATE restaurants SET business_id=?,name=?,cuisine=?,delivery=?,pickup=?,dietary_options=?,description=?,image_url=?,source_url=?,updated_at=CURRENT_TIMESTAMP WHERE id=?${guard}`)
+    .bind(businessId, title, cleanText(details.cuisine,200)||null, details.delivery?1:0, details.pickup?1:0, cleanText(details.dietaryOptions,600)||null, excerpt, externalOrNull(details.imageUrl,"Imaginea externă"), sourceUrl, entityId,...guardValues);
+  if (input.type === "daily_menu") return db.prepare(`UPDATE daily_menus SET restaurant_id=?,menu_date=?,soup=?,main_dish=?,side_dish=?,dessert=?,price=?,order_deadline=?,availability=?,owner_user_id=?,version=version+1,updated_at=CURRENT_TIMESTAMP WHERE id=?${guard}`)
+    .bind(numberOrNull(details.restaurantId), cleanText(details.menuDate,40,true), cleanText(details.soup,500)||null, cleanText(details.mainDish,500)||null, cleanText(details.sideDish,500)||null, cleanText(details.dessert,500)||null, numberOrNull(details.price), cleanText(details.orderDeadline,80)||null, cleanText(details.availability,100)||"active", account.id, entityId,...guardValues);
+  if (input.type === "place") return db.prepare(`UPDATE places SET title=?,address=?,description=?,accessibility=?,locality=?,image_url=?,source_url=?,updated_at=CURRENT_TIMESTAMP WHERE id=?${guard}`)
+    .bind(title, cleanText(details.address,300)||null, excerpt, cleanText(details.accessibility,500)||null, locality, externalOrNull(details.imageUrl,"Imaginea externă"), sourceUrl, entityId,...guardValues);
   throw new PlatformError(400, "Tip de conținut neacceptat.");
 }
 
-function typeSlugUpdate(db:D1Database,type:ContentType,entityId:number,slug:string){
+function typeSlugUpdate(db:D1Database,type:ContentType,entityId:number,slug:string,mutation?:{contentId:number;mutationId:string}){
   const tables:Partial<Record<ContentType,string>>={business:"businesses",event:"events",offer:"offers",job:"jobs",restaurant:"restaurants",place:"places"};
-  const table=tables[type];
-  return table?db.prepare(`UPDATE ${table} SET slug=? WHERE id=?`).bind(slug,entityId):db.prepare("SELECT 1");
+  const table=tables[type];const guard=mutation?" AND EXISTS (SELECT 1 FROM content_records WHERE id=? AND last_mutation_id=?)":"";
+  return table?db.prepare(`UPDATE ${table} SET slug=? WHERE id=?${guard}`).bind(slug,entityId,...(mutation?[mutation.contentId,mutation.mutationId]:[])):db.prepare("SELECT 1");
 }
 
 export async function createContent(account: LocalAccount, raw: Partial<ContentInput>) {
@@ -238,14 +280,18 @@ export async function createContent(account: LocalAccount, raw: Partial<ContentI
     body: postTypes.has(type) ? richValue(raw.body, "Conținut", 30_000, true) : raw.body,
   } as ContentInput;
   const db = getRuntimeDb();
-  await db.batch([
-    db.prepare("INSERT INTO content_records (id,type,entity_id,title,slug,excerpt,seo_title,seo_description,owner_user_id,business_id,status,moderation_state,visibility,created_by,last_edited_by,version) VALUES (?,?,?,?,?,?,?,?,?,?,'draft','draft','private',?,?,1)")
-      .bind(contentId, type, entityId, title, slug, input.excerpt, cleanText(raw.seoTitle,180)||null, cleanText(raw.seoDescription,300)||null, account.id, businessId, account.id, account.id),
+  const media = await normalizeMediaSelection(account, raw);
+  input.primaryMediaId = media.id; input.primaryMediaAltText = media.altText; input.primaryMediaState = media.state;
+  const statements = [
+    db.prepare("INSERT INTO content_records (id,type,entity_id,title,slug,excerpt,seo_title,seo_description,primary_media_id,primary_media_alt_text,primary_media_state,published_media_state,owner_user_id,business_id,status,moderation_state,visibility,created_by,last_edited_by,version) VALUES (?,?,?,?,?,?,?,?,?,?,?,'none',?,?,'draft','draft','private',?,?,1)")
+      .bind(contentId, type, entityId, title, slug, input.excerpt, cleanText(raw.seoTitle,180)||null, cleanText(raw.seoDescription,300)||null, media.id, media.altText||null, media.state, account.id, businessId, account.id, account.id),
     typeInsert(db, input, entityId, contentId, slug, account),
     db.prepare("INSERT INTO audit_logs (actor_user_id,action,entity_type,entity_id,metadata) VALUES (?,'content.created','content',?,?)")
       .bind(account.id, String(contentId), JSON.stringify({ type, status: "draft" })),
-  ]);
-  return { id: contentId, entityId, slug, status: "draft", version: 1 };
+  ];
+  const mediaAttach = attachMedia(db,media,contentId,businessId);if(mediaAttach)statements.push(mediaAttach);
+  await db.batch(statements);
+  return { id: contentId, entityId, slug, status: "draft", moderation_state:"draft", version: 1, primaryMediaId:media.id, primaryMediaAltText:media.altText, primaryMediaState:media.state, media:await editorMedia(db,contentId,media) };
 }
 
 export async function updateContent(account: LocalAccount, id: number, raw: Partial<ContentInput> & { version?: number }) {
@@ -253,7 +299,7 @@ export async function updateContent(account: LocalAccount, id: number, raw: Part
   const row = await db.prepare("SELECT * FROM content_records WHERE id=? AND deleted_at IS NULL").bind(id).first<ContentRow>();
   if (!row) throw new PlatformError(404, "Conținutul nu există.");
   if (!(await canManageEntity(account, id))) throw new PlatformError(403, "Nu poți edita acest conținut.");
-  if (Number(raw.version) !== row.version) throw new PlatformError(409, "Conținutul a fost modificat între timp. Reîncarcă pagina și compară versiunea nouă.", "stale_version");
+  if (Number(raw.version) !== row.version) throw staleContentVersion();
   if (row.status === "pending_review" || row.moderation_state === "pending_review") throw new PlatformError(409, "Retrage mai întâi trimiterea înainte de editare.");
 
   const existingDetails = await loadTypeDetails(db, row);
@@ -262,36 +308,37 @@ export async function updateContent(account: LocalAccount, id: number, raw: Part
   const excerpt = raw.excerpt === undefined ? richValue(row.excerpt, "Rezumat", 6_000) : richValue(raw.excerpt, "Rezumat", 6_000);
   const body = postTypes.has(row.type) ? richValue(raw.body ?? existingDetails.body, "Conținut", 30_000, true) : raw.body;
   const slug = await uniqueSlug(cleanText(raw.slug ?? row.slug, 120), title, id);
-  const normalizedInput = { ...raw, type: row.type, title, slug, excerpt, body, details } as ContentInput;
+  const media = await normalizeMediaSelection(account,raw,{state:row.primary_media_state,id:row.primary_media_id,altText:row.primary_media_alt_text||""});
+  const normalizedInput = { ...raw, type: row.type, title, slug, excerpt, body, details, primaryMediaId:media.id, primaryMediaAltText:media.altText, primaryMediaState:media.state } as ContentInput;
   const snapshot = JSON.stringify({ ...normalizedInput, version: row.version + 1 });
+  const mutationId=crypto.randomUUID();const mutation={contentId:id,mutationId};
 
   if (row.status === "published") {
     const revision = await db.prepare("SELECT COALESCE(MAX(revision_number),0)+1 AS next FROM content_revisions WHERE entity_type='content' AND entity_id=?")
       .bind(id).first<{ next: number }>();
-    await db.batch([
-      db.prepare("INSERT INTO content_revisions (entity_type,entity_id,revision_number,snapshot,created_by,moderation_status) VALUES ('content',?,?,?,?, 'draft')")
-        .bind(id, revision?.next ?? 1, snapshot, account.id),
-      db.prepare("UPDATE content_records SET moderation_state='draft',submitted_at=NULL,last_edited_by=?,updated_at=CURRENT_TIMESTAMP,version=version+1 WHERE id=? AND version=?")
-        .bind(account.id, id, row.version),
-      db.prepare("INSERT INTO audit_logs (actor_user_id,action,entity_type,entity_id,metadata) VALUES (?,'content.revision_draft_saved','content',?,?)")
-        .bind(account.id, String(id), JSON.stringify({ revision: revision?.next ?? 1 })),
-    ]);
-    return { id, status: "published", moderationState: "draft", publicVersionPreserved: true, version: row.version + 1 };
+    const statements=[
+      db.prepare("UPDATE content_records SET moderation_state='draft',submitted_at=NULL,last_edited_by=?,last_mutation_id=?,updated_at=CURRENT_TIMESTAMP,version=version+1 WHERE id=? AND version=?").bind(account.id,mutationId,id,row.version),
+      db.prepare("INSERT INTO content_revisions (entity_type,entity_id,revision_number,snapshot,created_by,moderation_status) SELECT 'content',?,?,?,?,'draft' WHERE EXISTS (SELECT 1 FROM content_records WHERE id=? AND last_mutation_id=?)").bind(id,revision?.next??1,snapshot,account.id,id,mutationId),
+      db.prepare("INSERT INTO audit_logs (actor_user_id,action,entity_type,entity_id,metadata) SELECT ?,'content.revision_draft_saved','content',?,? WHERE EXISTS (SELECT 1 FROM content_records WHERE id=? AND last_mutation_id=?)").bind(account.id,String(id),JSON.stringify({revision:revision?.next??1}),id,mutationId),
+    ];const mediaAttach=attachMedia(db,media,id,row.business_id,mutationId);if(mediaAttach)statements.push(mediaAttach);
+    const results=await db.batch(statements);if(Number(results[0]?.meta?.changes??0)!==1)throw staleContentVersion();
+    return { id, status: "published", moderation_state: "draft", moderationState: "draft", publicVersionPreserved: true, version: row.version + 1, primaryMediaId:media.id,primaryMediaAltText:media.altText,primaryMediaState:media.state,media:await editorMedia(db,id,media) };
   }
 
   if (!['draft', 'needs_changes', 'rejected'].includes(row.status)) throw new PlatformError(409, "Acest conținut nu poate fi editat în starea curentă.");
-  await db.batch([
-    db.prepare("UPDATE content_records SET title=?,slug=?,excerpt=?,seo_title=?,seo_description=?,last_edited_by=?,updated_at=CURRENT_TIMESTAMP,version=version+1 WHERE id=? AND version=?")
-      .bind(title, slug, excerpt, cleanText(raw.seoTitle,180)||null, cleanText(raw.seoDescription,300)||null, account.id, id, row.version),
-    typeUpdate(db, normalizedInput, row.entity_id as number, title, account),
-    typeSlugUpdate(db,row.type,row.entity_id as number,slug),
-    db.prepare("INSERT INTO content_revisions (entity_type,entity_id,revision_number,snapshot,created_by,moderation_status) VALUES ('content',?,?,?,?, 'draft')")
-      .bind(id, row.version + 1, snapshot, account.id),
-    db.prepare("INSERT INTO audit_logs (actor_user_id,action,entity_type,entity_id,metadata) VALUES (?,'content.updated','content',?,?)")
-      .bind(account.id, String(id), JSON.stringify({ fromVersion: row.version, toVersion: row.version + 1 })),
-  ]);
-  return { id, status: row.status, version: row.version + 1 };
+  const statements=[
+    db.prepare("UPDATE content_records SET title=?,slug=?,excerpt=?,seo_title=?,seo_description=?,primary_media_id=?,primary_media_alt_text=?,primary_media_state=?,last_edited_by=?,last_mutation_id=?,updated_at=CURRENT_TIMESTAMP,version=version+1 WHERE id=? AND version=?")
+      .bind(title,slug,excerpt,cleanText(raw.seoTitle,180)||null,cleanText(raw.seoDescription,300)||null,media.id,media.altText||null,media.state,account.id,mutationId,id,row.version),
+    typeUpdate(db,normalizedInput,row.entity_id as number,title,account,mutation),
+    typeSlugUpdate(db,row.type,row.entity_id as number,slug,mutation),
+    db.prepare("INSERT INTO content_revisions (entity_type,entity_id,revision_number,snapshot,created_by,moderation_status) SELECT 'content',?,?,?,?, 'draft' WHERE EXISTS (SELECT 1 FROM content_records WHERE id=? AND last_mutation_id=?)").bind(id,row.version+1,snapshot,account.id,id,mutationId),
+    db.prepare("INSERT INTO audit_logs (actor_user_id,action,entity_type,entity_id,metadata) SELECT ?,'content.updated','content',?,? WHERE EXISTS (SELECT 1 FROM content_records WHERE id=? AND last_mutation_id=?)").bind(account.id,String(id),JSON.stringify({fromVersion:row.version,toVersion:row.version+1}),id,mutationId),
+  ];const mediaAttach=attachMedia(db,media,id,row.business_id,mutationId);if(mediaAttach)statements.push(mediaAttach);
+  const results=await db.batch(statements);if(Number(results[0]?.meta?.changes??0)!==1)throw staleContentVersion();
+  return { id, status: row.status, moderation_state:row.moderation_state, version: row.version + 1, primaryMediaId:media.id,primaryMediaAltText:media.altText,primaryMediaState:media.state,media:await editorMedia(db,id,media) };
 }
+
+function staleContentVersion(){return new PlatformError(409,"Conținutul a fost modificat într-o altă sesiune. Păstrăm modificările tale nesalvate; compară versiunea nouă înainte de a continua.","stale_version")}
 
 async function loadTypeDetails(db: D1Database, row: ContentRow): Promise<Record<string, unknown>> {
   if (!row.entity_id) return {};
@@ -311,19 +358,24 @@ async function inputForRow(db: D1Database, row: ContentRow): Promise<ContentInpu
     body: details.body,
     locality: String(details.locality ?? ""),
     businessId: row.business_id,
+    primaryMediaId: row.primary_media_id,
+    primaryMediaAltText: row.primary_media_alt_text ?? "",
+    primaryMediaState: row.primary_media_state,
     details,
   };
 }
 
 function assertPublicationReady(input: ContentInput) {
   if (input.type === "business") validateBusinessPublicationInput(input);
+  if (input.primaryMediaState === "selected" && input.primaryMediaId && !cleanText(input.primaryMediaAltText,500)) throw new PlatformError(400,"Adaugă un text alternativ semnificativ pentru imagine.","media_alt_required");
 }
 
-export async function contentAction(account: LocalAccount, id: number, action: string) {
+export async function contentAction(account: LocalAccount, id: number, action: string, expectedVersion?:number) {
   const db = getRuntimeDb();
   const row = await db.prepare("SELECT * FROM content_records WHERE id=?").bind(id).first<ContentRow>();
   if (!row) throw new PlatformError(404, "Conținutul nu există.");
   if (!(await canManageEntity(account, id))) throw new PlatformError(403, "Nu poți administra acest conținut.");
+  if(Number.isInteger(expectedVersion)&&expectedVersion!==row.version)throw staleContentVersion();
   if(row.deleted_at)throw new PlatformError(409,"Materialul trebuie recuperat înainte de alte acțiuni.");
   const now = "CURRENT_TIMESTAMP";
   let statement: D1PreparedStatement;
@@ -394,7 +446,7 @@ export async function listMyContent(account: LocalAccount, search = "", status =
   if (status) { conditions.push("c.status=?"); bindings.push(status); }
   if (type) { conditions.push("c.type=?"); bindings.push(type); }
   if (search) { conditions.push("(c.title LIKE ? OR c.excerpt LIKE ?)"); bindings.push(`%${search}%`, `%${search}%`); }
-  return db.prepare(`SELECT DISTINCT c.* FROM content_records c LEFT JOIN business_memberships bm ON bm.business_id=c.business_id AND bm.membership_status='active' WHERE ${conditions.join(" AND ")} ORDER BY c.updated_at DESC LIMIT 200`)
+  return db.prepare(`SELECT DISTINCT c.*,CASE WHEN c.primary_media_state='none' THEN NULL WHEN c.primary_media_state='selected' THEN c.primary_media_id ELSE (SELECT id FROM media_assets WHERE content_id=c.id AND media_status='active' ORDER BY created_at DESC,id DESC LIMIT 1) END editor_media_id,CASE WHEN c.primary_media_state='selected' THEN c.primary_media_alt_text ELSE (SELECT alt_text FROM media_assets WHERE content_id=c.id AND media_status='active' ORDER BY created_at DESC,id DESC LIMIT 1) END editor_media_alt FROM content_records c LEFT JOIN business_memberships bm ON bm.business_id=c.business_id AND bm.membership_status='active' WHERE ${conditions.join(" AND ")} ORDER BY c.updated_at DESC LIMIT 200`)
     .bind(...bindings).all<ContentRow>();
 }
 
@@ -402,11 +454,12 @@ export async function getContentForEditor(account: LocalAccount, id: number) {
   if (!isAdmin(account) && !(await canManageEntity(account, id))) throw new PlatformError(403, "Nu poți edita acest conținut.");
   const db=getRuntimeDb();const row=await db.prepare(isAdmin(account)?"SELECT * FROM content_records WHERE id=?":"SELECT * FROM content_records WHERE id=? AND deleted_at IS NULL").bind(id).first<ContentRow>();if(!row||!row.entity_id)return row;
   if(row.status==="published"){
-    const revision=await db.prepare("SELECT snapshot,moderation_status FROM content_revisions WHERE entity_type='content' AND entity_id=? AND moderation_status IN ('draft','pending_review','needs_changes') ORDER BY revision_number DESC LIMIT 1").bind(id).first<{snapshot:string;moderation_status:string}>();
-    if(revision){try{const input=JSON.parse(revision.snapshot) as ContentInput;return{...row,...input,status:row.status,moderation_state:revision.moderation_status,details:input.details||{},publicVersionPreserved:true}}catch{/* Fall back to the published row when a legacy snapshot is unreadable. */}}
+    const revision=await db.prepare("SELECT snapshot,moderation_status,revision_number FROM content_revisions WHERE entity_type='content' AND entity_id=? AND moderation_status IN ('draft','pending_review','needs_changes') ORDER BY revision_number DESC LIMIT 1").bind(id).first<{snapshot:string;moderation_status:string;revision_number:number}>();
+    if(revision){try{const input=JSON.parse(revision.snapshot) as ContentInput;const selection:MediaSelection={state:input.primaryMediaState??row.primary_media_state,id:numberOrNull(input.primaryMediaId)??row.primary_media_id,altText:cleanText(input.primaryMediaAltText??row.primary_media_alt_text,500)};return{...row,...input,version:row.version,status:row.status,moderation_state:revision.moderation_status,details:input.details||{},primaryMediaId:selection.id,primaryMediaAltText:selection.altText,primaryMediaState:selection.state,media:await editorMedia(db,id,selection),revisionNumber:revision.revision_number,publicVersionPreserved:true}}catch{/* Fall back to the published row when a legacy snapshot is unreadable. */}}
   }
-  if(postTypes.has(row.type)){const details=await db.prepare("SELECT * FROM posts WHERE id=?").bind(row.entity_id).first<any>();return {...row,body:details?.body??"",locality:details?.locality??"",sourceUrl:details?.source_information??"",details:details||{}}}
-  const tables:Partial<Record<ContentType,string>>={business:"businesses",event:"events",offer:"offers",job:"jobs",restaurant:"restaurants",daily_menu:"daily_menus",place:"places"};const table=tables[row.type];if(!table)return row;const details=await db.prepare(`SELECT * FROM ${table} WHERE id=?`).bind(row.entity_id).first<any>();return {...row,locality:details?.locality??"",sourceUrl:details?.source_url??"",details:details||{}};
+  const selection:MediaSelection={state:row.primary_media_state,id:row.primary_media_id,altText:row.primary_media_alt_text||""};const media=await editorMedia(db,id,selection);
+  if(postTypes.has(row.type)){const details=await db.prepare("SELECT * FROM posts WHERE id=?").bind(row.entity_id).first<any>();return {...row,body:details?.body??"",locality:details?.locality??"",sourceUrl:details?.source_information??"",details:details||{},primaryMediaId:media?.id??row.primary_media_id,primaryMediaAltText:media?.altText??selection.altText,primaryMediaState:media?"selected":selection.state,media}}
+  const tables:Partial<Record<ContentType,string>>={business:"businesses",event:"events",offer:"offers",job:"jobs",restaurant:"restaurants",daily_menu:"daily_menus",place:"places"};const table=tables[row.type];if(!table)return{...row,media};const details=await db.prepare(`SELECT * FROM ${table} WHERE id=?`).bind(row.entity_id).first<any>();return {...row,locality:details?.locality??"",sourceUrl:details?.source_url??"",details:details||{},primaryMediaId:media?.id??row.primary_media_id,primaryMediaAltText:media?.altText??selection.altText,primaryMediaState:media?"selected":selection.state,media};
 }
 
 export async function adminModerate(account: LocalAccount, id: number, action: string, note: string, scheduledAt = "") {
@@ -443,13 +496,15 @@ export async function adminModerate(account: LocalAccount, id: number, action: s
     else if(action==="needs_changes")target={status:"published",moderation:"needs_changes",visibility:"public"};
     else if(action==="reject")target={status:"published",moderation:"approved",visibility:"public"};
   }
-  if(!revisionInput&&["publish","approve","restore","schedule"].includes(action))assertPublicationReady(await inputForRow(db,row));
+  const publicationInput=!revisionInput&&["publish","approve","restore","schedule"].includes(action)?await inputForRow(db,row):revisionInput;
+  if(publicationInput&&["publish","approve","restore","schedule"].includes(action))assertPublicationReady(publicationInput);
   const publishedSnapshot = (action === "publish" || action === "restore" || (revisionInput&&action==="approve"))
-    ? JSON.stringify({ title: row.title, excerpt: row.excerpt, type: row.type, entityId: row.entity_id, version: row.version + 1 })
+    ? JSON.stringify({ ...(publicationInput||{}), title: publicationInput?.title||row.title, excerpt: publicationInput?.excerpt||row.excerpt, type: row.type, entityId: row.entity_id, version: row.version + 1 })
     : row.published_snapshot;
+  const publishMedia=["publish","approve","restore","schedule"].includes(action)&&publicationInput?{id:numberOrNull(publicationInput.primaryMediaId),alt:cleanText(publicationInput.primaryMediaAltText,500)||null,state:publicationInput.primaryMediaState||"none"}:null;
   const statements:D1PreparedStatement[]=[
-    db.prepare("UPDATE content_records SET status=?,moderation_state=?,visibility=?,published_by=CASE WHEN ?='published' THEN ? ELSE published_by END,published_at=CASE WHEN ?='published' THEN COALESCE(published_at,CURRENT_TIMESTAMP) ELSE published_at END,archived_at=CASE WHEN ?='archived' THEN CURRENT_TIMESTAMP WHEN ?='published' THEN NULL ELSE archived_at END,published_snapshot=?,updated_at=CURRENT_TIMESTAMP,version=version+1 WHERE id=? AND version=?")
-      .bind(target.status, target.moderation, target.visibility, target.status, account.id, target.status, target.status, target.status, publishedSnapshot, id, row.version),
+    db.prepare("UPDATE content_records SET status=?,moderation_state=?,visibility=?,published_by=CASE WHEN ?='published' THEN ? ELSE published_by END,published_at=CASE WHEN ?='published' THEN COALESCE(published_at,CURRENT_TIMESTAMP) ELSE published_at END,archived_at=CASE WHEN ?='archived' THEN CURRENT_TIMESTAMP WHEN ?='published' THEN NULL ELSE archived_at END,published_snapshot=?,published_media_id=CASE WHEN ? THEN ? ELSE published_media_id END,published_media_alt_text=CASE WHEN ? THEN ? ELSE published_media_alt_text END,published_media_state=CASE WHEN ? THEN ? ELSE published_media_state END,updated_at=CURRENT_TIMESTAMP,version=version+1 WHERE id=? AND version=?")
+      .bind(target.status,target.moderation,target.visibility,target.status,account.id,target.status,target.status,target.status,publishedSnapshot,Boolean(publishMedia),publishMedia?.id??null,Boolean(publishMedia),publishMedia?.alt??null,Boolean(publishMedia),publishMedia?.state??"none",id,row.version),
     db.prepare("INSERT INTO moderation_records (submission_id,entity_type,entity_id,previous_state,new_state,moderator_id,action,note) VALUES (0,'content',?,?,?,?,?,?)")
       .bind(id, row.status, target.status, String(account.id), action, cleanText(note, 2000) || null),
     db.prepare("INSERT INTO audit_logs (actor_user_id,action,entity_type,entity_id,metadata) VALUES (?,'moderation.decision','content',?,?)")
@@ -460,7 +515,8 @@ export async function adminModerate(account: LocalAccount, id: number, action: s
     statements.push(db.prepare("UPDATE content_revisions SET moderation_status=?,moderator_id=?,moderator_note=? WHERE id=?").bind(revisionState,account.id,cleanText(note,2000)||null,pendingRevision.id));
     if(revisionInput&&(action==="publish"||action==="approve")){
       const revisionTitle=cleanText(revisionInput.title,240,true);const revisionExcerpt=richValue(revisionInput.excerpt,"Rezumat",6_000);const revisionSlug=await uniqueSlug(cleanText(revisionInput.slug||row.slug,120),revisionTitle,id);
-      statements[0]=db.prepare("UPDATE content_records SET title=?,slug=?,excerpt=?,seo_title=?,seo_description=?,status='published',moderation_state='approved',visibility='public',published_by=?,published_at=COALESCE(published_at,CURRENT_TIMESTAMP),published_snapshot=?,updated_at=CURRENT_TIMESTAMP,version=version+1 WHERE id=? AND version=?").bind(revisionTitle,revisionSlug,revisionExcerpt||null,cleanText(revisionInput.seoTitle,180)||null,cleanText(revisionInput.seoDescription,300)||null,account.id,JSON.stringify({...revisionInput,title:revisionTitle,slug:revisionSlug,excerpt:revisionExcerpt}),id,row.version);
+      const revisionMedia={id:numberOrNull(revisionInput.primaryMediaId),alt:cleanText(revisionInput.primaryMediaAltText,500)||null,state:revisionInput.primaryMediaState||"none"};
+      statements[0]=db.prepare("UPDATE content_records SET title=?,slug=?,excerpt=?,seo_title=?,seo_description=?,primary_media_id=?,primary_media_alt_text=?,primary_media_state=?,published_media_id=?,published_media_alt_text=?,published_media_state=?,status='published',moderation_state='approved',visibility='public',published_by=?,published_at=COALESCE(published_at,CURRENT_TIMESTAMP),published_snapshot=?,updated_at=CURRENT_TIMESTAMP,version=version+1 WHERE id=? AND version=?").bind(revisionTitle,revisionSlug,revisionExcerpt||null,cleanText(revisionInput.seoTitle,180)||null,cleanText(revisionInput.seoDescription,300)||null,revisionMedia.id,revisionMedia.alt,revisionMedia.state,revisionMedia.id,revisionMedia.alt,revisionMedia.state,account.id,JSON.stringify({...revisionInput,title:revisionTitle,slug:revisionSlug,excerpt:revisionExcerpt}),id,row.version);
       statements.push(typeUpdate(db,{...revisionInput,type:row.type,title:revisionTitle,excerpt:revisionExcerpt},row.entity_id as number,revisionTitle,account));
       statements.push(typeSlugUpdate(db,row.type,row.entity_id as number,revisionSlug));
     }

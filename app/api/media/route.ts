@@ -2,19 +2,19 @@ import { env } from "cloudflare:workers";
 import { getRuntimeDb } from "../../../db/runtime";
 import { assertSameOrigin, canManageEntity, cleanText, enforceRateLimit, isAdmin, jsonError, PlatformError, requireAuthenticatedUser, requireBusinessMembership } from "../../server/platform";
 import { safeExternalHref } from "../../site-content";
+import { ImageValidationError, inspectImage, MAX_IMAGE_BYTES } from "../../server/media";
 
-const maxBytes = 8 * 1024 * 1024;
-const formats = {
-  jpeg: { mime: "image/jpeg", extension: "jpg" },
-  png: { mime: "image/png", extension: "png" },
-  webp: { mime: "image/webp", extension: "webp" },
-} as const;
+type MediaResponseRow = { id:number; alt_text:string|null; approval_status:string; media_status:string; width:number|null; height:number|null; mime_type:string|null };
 
-function detectImage(bytes: Uint8Array): (typeof formats)[keyof typeof formats] | null {
-  if (bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) return formats.jpeg;
-  if (bytes.length >= 8 && [0x89,0x50,0x4e,0x47,0x0d,0x0a,0x1a,0x0a].every((value, index) => bytes[index] === value)) return formats.png;
-  if (bytes.length >= 12 && new TextDecoder().decode(bytes.slice(0, 4)) === "RIFF" && new TextDecoder().decode(bytes.slice(8, 12)) === "WEBP") return formats.webp;
-  return null;
+function validationError(error: ImageValidationError): PlatformError {
+  if (error.reason === "too_large") return new PlatformError(413, "Imaginea depășește dimensiunea maximă permisă.", "media_too_large");
+  if (error.reason === "unsupported") return new PlatformError(415, "Formatul imaginii nu este acceptat.", "media_unsupported");
+  if (error.reason === "dimensions") return new PlatformError(413, "Imaginea are dimensiuni prea mari.", "media_dimensions_too_large");
+  return new PlatformError(400, "Fișierul selectat nu este o imagine validă.", "media_invalid");
+}
+
+function mediaResponse(row: MediaResponseRow) {
+  return { id: row.id, url: `/api/media/${row.id}`, altText: row.alt_text ?? "", approvalStatus: row.approval_status, mediaStatus: row.media_status, width: row.width, height: row.height };
 }
 
 export async function GET(request: Request) {
@@ -38,26 +38,42 @@ export async function POST(request: Request) {
     await enforceRateLimit(account,"media.uploaded",20,60);
     const form = await request.formData();
     const file = form.get("file");
-    if (!(file instanceof File) || !file.size) throw new PlatformError(400, "Alege o imagine.");
-    if (file.size > maxBytes) throw new PlatformError(413, "Imaginea depășește limita de 8 MB.");
+    if (!(file instanceof File) || !file.size) throw new PlatformError(400, "Fișierul selectat nu este o imagine validă.", "media_invalid");
+    if (file.size > MAX_IMAGE_BYTES) throw new PlatformError(413, "Imaginea depășește dimensiunea maximă permisă.", "media_too_large");
+    const uploadIdRaw = cleanText(form.get("uploadId"), 80);
+    const uploadId = uploadIdRaw || crypto.randomUUID();
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(uploadId)) throw new PlatformError(400, "Identificatorul încărcării nu este valid.");
+    const db = getRuntimeDb();
+    const existing = await db.prepare("SELECT id,alt_text,approval_status,media_status,width,height,mime_type FROM media_assets WHERE upload_id=? AND owner_user_id=? LIMIT 1").bind(uploadId, account.id).first<MediaResponseRow>();
+    if (existing) return Response.json({ media: mediaResponse(existing), idempotent: true });
     const bytes = new Uint8Array(await file.arrayBuffer());
-    const format = detectImage(bytes);
-    if (!format) throw new PlatformError(400, "Sunt acceptate doar imagini JPEG, PNG sau WebP valide.");
+    let format;
+    try { format = inspectImage(file.name, file.type, bytes); }
+    catch (error) { if (error instanceof ImageValidationError) throw validationError(error); throw error; }
     const altText = cleanText(form.get("altText"), 500, true);
     const businessId = Number(form.get("businessId")) || null;
     if (businessId) await requireBusinessMembership(account, businessId);
     const contentId = Number(form.get("contentId")) || null;
     if (contentId && !(await canManageEntity(account, contentId))) throw new PlatformError(403, "Nu poți atașa imaginea acestui material.");
     const objectKey = `users/${account.id}/${crypto.randomUUID()}.${format.extension}`;
-    await env.MEDIA.put(objectKey, bytes, { httpMetadata: { contentType: format.mime }, customMetadata: { originalName: file.name.slice(0, 180), ownerUserId: String(account.id) } });
     const rawSource = cleanText(form.get("sourceUrl"), 800);
     const sourceUrl = rawSource ? safeExternalHref(rawSource) : null;
     if (rawSource && !sourceUrl) throw new PlatformError(400, "Sursa imaginii trebuie să fie un URL HTTP sau HTTPS valid.");
-    const result = await getRuntimeDb().prepare("INSERT INTO media_assets (r2_key,title,photographer,source_url,license,alt_text,owner_user_id,business_id,content_id,original_filename,mime_type,size_bytes,approval_status,media_status,orphaned_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,'pending','active',datetime('now','+7 days'))")
-      .bind(objectKey, cleanText(form.get("title"), 240) || null, cleanText(form.get("photographer"), 240) || null, sourceUrl, cleanText(form.get("license"), 120) || null, altText, account.id, businessId, contentId, file.name.slice(0, 180), format.mime, file.size).run();
-    await getRuntimeDb().prepare("INSERT INTO audit_logs (actor_user_id,action,entity_type,entity_id,metadata) VALUES (?,'media.uploaded','media',?,?)")
-      .bind(account.id, String(result.meta.last_row_id), JSON.stringify({ mimeType: format.mime, size: file.size })).run();
-    return Response.json({ id: result.meta.last_row_id, key: objectKey, status: "pending" }, { status: 201 });
+    await env.MEDIA.put(objectKey, bytes, { httpMetadata: { contentType: format.mime }, customMetadata: { originalName: file.name.slice(0, 180), ownerUserId: String(account.id) } });
+    let result;
+    try {
+      result = await db.prepare("INSERT INTO media_assets (r2_key,title,photographer,source_url,license,alt_text,owner_user_id,business_id,content_id,original_filename,mime_type,size_bytes,width,height,upload_id,approval_status,media_status,orphaned_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'pending','active',datetime('now','+7 days'))")
+        .bind(objectKey, cleanText(form.get("title"), 240) || null, cleanText(form.get("photographer"), 240) || null, sourceUrl, cleanText(form.get("license"), 120) || null, altText, account.id, businessId, contentId, file.name.slice(0, 180), format.mime, file.size, format.width, format.height, uploadId).run();
+    } catch (error) {
+      await env.MEDIA.delete(objectKey);
+      const raced = await db.prepare("SELECT id,alt_text,approval_status,media_status,width,height,mime_type FROM media_assets WHERE upload_id=? AND owner_user_id=? LIMIT 1").bind(uploadId, account.id).first<MediaResponseRow>();
+      if (raced) return Response.json({ media: mediaResponse(raced), idempotent: true });
+      throw error;
+    }
+    const id = Number(result.meta.last_row_id);
+    await db.prepare("INSERT INTO audit_logs (actor_user_id,action,entity_type,entity_id,metadata) VALUES (?,'media.uploaded','media',?,?)")
+      .bind(account.id, String(id), JSON.stringify({ mimeType: format.mime, size: file.size, width: format.width, height: format.height })).run();
+    return Response.json({ media: mediaResponse({ id, alt_text: altText, approval_status: "pending", media_status: "active", width: format.width, height: format.height, mime_type: format.mime }) }, { status: 201 });
   } catch (error) { return jsonError(error); }
 }
 

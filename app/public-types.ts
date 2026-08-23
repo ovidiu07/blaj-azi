@@ -15,6 +15,7 @@ export type PublicBase = {
   latitude?: number;
   longitude?: number;
   image?: string;
+  imageAlt?: string;
 };
 
 export type PublicEvent = PublicBase & {

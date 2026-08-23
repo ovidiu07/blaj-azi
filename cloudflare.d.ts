@@ -18,6 +18,13 @@ interface R2Bucket {
     put(key: string, value: ReadableStream | ArrayBuffer | ArrayBufferView, options?: unknown): Promise<unknown>;
     get(key: string): Promise<R2ObjectBody | null>;
     delete(key: string): Promise<void>;
+}
+interface ImagesBinding {
+    input(stream: ReadableStream): {
+      transform(options: Record<string, unknown>): {
+        output(options: { format: string; quality?: number }): Promise<{ response(): Response }>;
+      };
+    };
   }
 interface Fetcher { fetch(request: Request): Promise<Response>; }
 
@@ -27,7 +34,7 @@ declare module "cloudflare:workers" {
     MEDIA: R2Bucket;
     ADMIN_EMAIL?: string;
     ASSETS?: Fetcher;
-    IMAGES?: unknown;
+    IMAGES?: ImagesBinding;
     [key: string]: unknown;
   };
 }

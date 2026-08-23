@@ -244,7 +244,14 @@ export const contentRecords = sqliteTable(
     expiresAt: text("expires_at"),
     seoTitle: text("seo_title"),
     seoDescription: text("seo_description"),
+    primaryMediaId: integer("primary_media_id"),
+    primaryMediaAltText: text("primary_media_alt_text"),
+    primaryMediaState: text("primary_media_state").notNull().default("legacy"),
+    publishedMediaId: integer("published_media_id"),
+    publishedMediaAltText: text("published_media_alt_text"),
+    publishedMediaState: text("published_media_state").notNull().default("legacy"),
     publishedSnapshot: text("published_snapshot"),
+    lastMutationId: text("last_mutation_id"),
     version: integer("version").notNull().default(1),
     createdAt: text("created_at").notNull().default(now),
     updatedAt: text("updated_at").notNull().default(now),
@@ -315,9 +322,9 @@ export const mediaAssets = sqliteTable(
   {
     id: integer("id").primaryKey({ autoIncrement: true }),
     r2Key: text("r2_key"), title: text("title"), description: text("description"), photographer: text("photographer"), sourceUrl: text("source_url"), license: text("license"), altText: text("alt_text"), location: text("location"), category: text("category"), featured: integer("featured", { mode: "boolean" }).notNull().default(false),
-    ownerUserId: integer("owner_user_id"), businessId: integer("business_id"), contentId: integer("content_id"), originalFilename: text("original_filename"), mimeType: text("mime_type"), sizeBytes: integer("size_bytes"), approvalStatus: text("approval_status").notNull().default("pending"), mediaStatus: text("media_status").notNull().default("active"), archivedAt: text("archived_at"), orphanedAt: text("orphaned_at"), createdAt: text("created_at").notNull().default("CURRENT_TIMESTAMP"),
+    ownerUserId: integer("owner_user_id"), businessId: integer("business_id"), contentId: integer("content_id"), originalFilename: text("original_filename"), mimeType: text("mime_type"), sizeBytes: integer("size_bytes"), width: integer("width"), height: integer("height"), uploadId: text("upload_id"), approvalStatus: text("approval_status").notNull().default("pending"), mediaStatus: text("media_status").notNull().default("active"), archivedAt: text("archived_at"), orphanedAt: text("orphaned_at"), createdAt: text("created_at").notNull().default("CURRENT_TIMESTAMP"),
   },
-  (table) => [index("idx_media_assets_owner_status").on(table.ownerUserId, table.mediaStatus, table.approvalStatus), index("idx_media_assets_business_status").on(table.businessId, table.mediaStatus), index("idx_media_assets_content_status").on(table.contentId, table.mediaStatus, table.approvalStatus)],
+  (table) => [index("idx_media_assets_owner_status").on(table.ownerUserId, table.mediaStatus, table.approvalStatus), index("idx_media_assets_business_status").on(table.businessId, table.mediaStatus), index("idx_media_assets_content_status").on(table.contentId, table.mediaStatus, table.approvalStatus), uniqueIndex("media_assets_upload_id_unique").on(table.uploadId)],
 );
 
 export const submissions = sqliteTable("submissions", { id: integer("id").primaryKey({ autoIncrement: true }), type: text("type").notNull(), contributorName: text("contributor_name"), email: text("email").notNull(), title: text("title"), locality: text("locality"), category: text("category"), description: text("description"), sourceUrl: text("source_url"), mediaKey: text("media_key"), payload: text("payload"), rightsConfirmed: integer("rights_confirmed", { mode: "boolean" }).notNull().default(false), consent: integer("consent", { mode: "boolean" }).notNull(), status: text("status").notNull().default("pending_review"), userId: integer("user_id"), contentItemId: integer("content_item_id"), createdAt: text("created_at").notNull().default("CURRENT_TIMESTAMP") });
