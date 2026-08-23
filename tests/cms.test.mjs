@@ -89,14 +89,19 @@ test("homepage accepts intentional blanks, optional links, cleared media, and up
     ...defaults,
     titleLine: "",
     emphasizedTitleLine: "",
+    heroTrust: "",
     primaryCtaLabel: "",
     primaryCtaHref: "",
     eventsLinkHref: "",
+    eventsEmptyActionLabel: "",
+    eventsEmptyActionHref: "",
     heroImage: { src:"", mediaId:null, alt:"", decorative:false, caption:"", author:"", sourceUrl:"", license:"", objectPosition:"center", showCredit:false },
   };
   const validated = cms.validateSiteContent("home", blank);
   assert.equal(validated.titleLine, "");
   assert.equal(validated.primaryCtaHref, "");
+  assert.equal(validated.heroTrust, "");
+  assert.equal(validated.eventsEmptyActionHref, "");
   assert.deepEqual(validated.heroImage, blank.heroImage);
   assert.doesNotThrow(() => cms.validateSiteContent("home", { ...blank, editorialCtaHref:"" }));
   assert.throws(() => cms.validateSiteContent("home", { ...blank, editorialCtaHref:"https://evil.example" }), /linkul intern nu este sigur/);
@@ -108,6 +113,8 @@ test("homepage accepts intentional blanks, optional links, cleared media, and up
   assert.equal(loaded.titleLine,"Titlu vechi");
   assert.equal(loaded.kicker,defaults.kicker);
   assert.equal(loaded.primaryCtaLabel,"");
+  assert.equal(loaded.heroTrust,defaults.heroTrust);
+  assert.equal(loaded.eventsEmptyActionHref,defaults.eventsEmptyActionHref);
   assert.deepEqual(loaded.quickCategories,[]);
   assert.equal(loaded.restaurantFilters[0].value,"Toate");
   assert.equal(loaded.restaurantFilters[0].visible,true);
@@ -121,9 +128,12 @@ test("homepage snapshots preserve blank, hidden, deleted, reordered, and cleared
   const target = {
     ...home,
     titleLine:"",
+    heroTrust:"",
     primaryCtaLabel:"",
     primaryCtaHref:"",
     eventsVisible:false,
+    eventsEmptyActionLabel:"",
+    eventsEmptyActionHref:"",
     editorialImage:clearedImage,
     quickCategories:[home.quickCategories[2],{...home.quickCategories[0],visible:false,deleted:true},home.quickCategories[1]],
     restaurantFilters:[home.restaurantFilters[2],{...home.restaurantFilters[0],visible:false,deleted:true}],

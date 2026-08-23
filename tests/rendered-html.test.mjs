@@ -40,8 +40,8 @@ test("includes durable-data, moderation, SEO, and media foundations", async () =
   assert.match(schema, /submissions|moderationRecords|newsletterSubscriptions|promotedPlacements/);
   assert.match(api, /pending_review/);
   assert.match(layout, /openGraph|summary_large_image/);
-  assert.match(layout, /Source_Serif_4|Inter/);
-  assert.doesNotMatch(layout, /Cormorant_Garamond|Manrope/);
+  assert.match(layout, /Manrope|Inter/);
+  assert.doesNotMatch(layout, /Cormorant_Garamond|Source_Serif_4/);
   assert.match(attribution, /CC BY-SA 4\.0|domeniul public/);
   assert.doesNotMatch(packageJson, /react-loading-skeleton/);
   await access(new URL("../public/og.png", import.meta.url));

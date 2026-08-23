@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { headers } from "next/headers";
-import { Inter, Source_Serif_4 } from "next/font/google";
+import { Inter, Manrope } from "next/font/google";
 import { SiteFooter, SiteHeader } from "./ui/SiteChrome";
 import { getOptionalAccount, isAdmin } from "./server/platform";
 import { getRuntimeDb } from "../db/runtime";
@@ -9,10 +9,10 @@ import { cmsImageUrl, resolveCmsImage } from "./site-content";
 import { themeCssProperties } from "./theme";
 import "./globals.css";
 
-const display = Source_Serif_4({
+const display = Manrope({
   variable: "--font-display",
   subsets: ["latin", "latin-ext"],
-  weight: ["600", "700"],
+  weight: ["500", "600", "700", "800"],
   display: "swap",
 });
 const sans = Inter({

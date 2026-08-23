@@ -31,14 +31,14 @@ test("legacy plain text is preserved without treating supplied HTML as executabl
   assert.match(html, /&lt;script&gt;/);
 });
 
-test("theme defaults preserve the existing identity and meet publish contrast", () => {
+test("theme defaults establish the civic discovery identity and meet publish contrast", () => {
   const defaults = cms.defaultSiteContent("theme.site");
   assert.deepEqual(defaults, theme.defaultTheme);
   assert.deepEqual(theme.validateTheme(defaults), defaults);
   assert.ok(theme.themeContrastChecks(defaults).every(item => item.pass));
-  assert.equal(theme.themeCssProperties(defaults)["--color-accent"], "#b84b3b");
-  assert.equal(theme.homeThemeCssProperties(defaults)["--home-hero-background"], "#0f3039");
-  assert.equal(theme.homeThemeCssProperties(defaults)["--home-jobs-background"], "#e8f1f3");
+  assert.equal(theme.themeCssProperties(defaults)["--color-accent"], "#c44b32");
+  assert.equal(theme.homeThemeCssProperties(defaults)["--home-hero-background"], "#eaf1ee");
+  assert.equal(theme.homeThemeCssProperties(defaults)["--home-jobs-background"], "#eaf1ee");
 });
 
 test("theme drafts accept valid colors while publish validation rejects weak contrast", () => {

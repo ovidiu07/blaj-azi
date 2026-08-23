@@ -11,7 +11,7 @@ const DB = {
         if (/FROM site_content_entries WHERE key=\?/i.test(sql)) {
           const key = bindings[0];
           return Object.hasOwn(entries, key)
-            ? { published_json: JSON.stringify(entries[key]), schema_version: key === "home" ? 2 : 1 }
+            ? { published_json: JSON.stringify(entries[key]), schema_version: key === "home" ? 3 : 1 }
             : null;
         }
         return null;
@@ -50,15 +50,15 @@ function minimalHome(overrides = {}) {
 
 test("hero optional elements are absent from the DOM and leave the deliberate no-image variant", async () => {
   const noImage = await render("/", { home: minimalHome() });
-  assert.match(noImage, /hero-without-image/);
-  assert.doesNotMatch(noImage, /hero-image|hero-shade|image-credit/);
+  assert.match(noImage, /home-hero-no-image/);
+  assert.doesNotMatch(noImage, /home-hero-visual|home-image-credit/);
 
   const noIntro = await render("/", { home: minimalHome({ intro: "" }) });
-  assert.doesNotMatch(noIntro, /hero-copy/);
-  assert.match(noIntro, /hero-search/);
+  assert.doesNotMatch(noIntro, /home-hero-intro/);
+  assert.match(noIntro, /home-search/);
 
   const noSearch = await render("/", { home: minimalHome({ searchVisible: false }) });
-  assert.doesNotMatch(noSearch, /hero-search|hero-query/);
+  assert.doesNotMatch(noSearch, /home-search|hero-query/);
 
   const noPrimary = await render("/", { home: minimalHome({ primaryCtaLabel: "", primaryCtaHref: "" }) });
   assert.doesNotMatch(noPrimary, /Acțiune principală/);
@@ -69,7 +69,7 @@ test("hero optional elements are absent from the DOM and leave the deliberate no
   assert.doesNotMatch(noSecondary, /Acțiune secundară/);
 
   const noActions = await render("/", { home: minimalHome({ primaryCtaLabel: "", primaryCtaHref: "", secondaryCtaLabel: "", secondaryCtaHref: "" }) });
-  assert.doesNotMatch(noActions, /hero-actions/);
+  assert.doesNotMatch(noActions, /home-hero-actions/);
 
   const oneTitleLine = await render("/", { home: minimalHome({ titleLine: "", emphasizedTitleLine: "Linie păstrată" }) });
   assert.match(oneTitleLine, /<h1>.*Linie păstrată.*<\/h1>/s);
@@ -80,8 +80,8 @@ test("image credit, empty page headers, and empty legal bodies do not render wra
   const imageWithoutCredit = await render("/", { home: minimalHome({
     heroImage: { src: "/images/campia-libertatii.jpg", mediaId: null, alt: "Câmpia Libertății", decorative: false, caption: "", author: "", sourceUrl: "", license: "", objectPosition: "center", showCredit: true },
   }) });
-  assert.match(imageWithoutCredit, /hero-with-image/);
-  assert.doesNotMatch(imageWithoutCredit, /image-credit/);
+  assert.match(imageWithoutCredit, /home-hero-has-image/);
+  assert.doesNotMatch(imageWithoutCredit, /home-image-credit/);
 
   const legal = await render("/termeni", { "page.terms": { eyebrow: "Legal", title: "Termeni", intro: "Condiții de utilizare", blocks: [] } });
   assert.match(legal, /<h1>Termeni<\/h1>/);

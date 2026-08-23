@@ -1,15 +1,15 @@
-export const themeFontOptions = ["inter", "source-serif-4", "system-sans", "georgia"] as const;
+export const themeFontOptions = ["manrope", "inter", "source-serif-4", "system-sans", "georgia"] as const;
 export type ThemeFont = typeof themeFontOptions[number];
 
 export const defaultTheme = {
-  canvas: "#faf8f4", surface: "#ffffff", primary: "#173f4b", primaryDark: "#0f3039",
-  accent: "#b84b3b", accentDark: "#99382d", accentSoft: "#f3e3de", highlight: "#e2b85b",
-  text: "#1e2426", textMuted: "#5c666a", border: "#dfe3e2", focus: "#b84b3b",
-  headerBackground: "#f6f0e4", buttonText: "#ffffff",
-  headingFont: "source-serif-4", bodyFont: "inter", interfaceFont: "inter",
-  homeHeroBackground: "#0f3039", homeHeroText: "#ffffff", homeHeroMuted: "#e9f0f1",
-  homeDarkSection: "#ffffff", homeDarkSectionText: "#1e2426", homeJobsBackground: "#e8f1f3", homeCardBackground: "#ffffff",
-  homeAlternateBackground: "#e8f1f3", homeCtaBackground: "#f3e3de", homeCtaText: "#1e2426",
+  canvas: "#f4f6f3", surface: "#ffffff", primary: "#0d5c50", primaryDark: "#08483f",
+  accent: "#c44b32", accentDark: "#b9442d", accentSoft: "#f9e5df", highlight: "#e6b94a",
+  text: "#14201e", textMuted: "#52615e", border: "#d9e2de", focus: "#0867d8",
+  headerBackground: "#ffffff", buttonText: "#ffffff",
+  headingFont: "manrope", bodyFont: "inter", interfaceFont: "manrope",
+  homeHeroBackground: "#eaf1ee", homeHeroText: "#14201e", homeHeroMuted: "#52615e",
+  homeDarkSection: "#102622", homeDarkSectionText: "#f8fbf9", homeJobsBackground: "#eaf1ee", homeCardBackground: "#ffffff",
+  homeAlternateBackground: "#eaf1ee", homeCtaBackground: "#102622", homeCtaText: "#f8fbf9",
 } as const;
 
 export type ThemeSettings = { -readonly [K in keyof typeof defaultTheme]: string };
@@ -40,11 +40,11 @@ export function themeContrastChecks(themeValue: unknown) {
   return [
     contrast("Text principal / fundal", theme.text, theme.canvas),
     contrast("Text secundar / fundal", theme.textMuted, theme.canvas),
-    contrast("Text buton / accent", theme.buttonText, theme.accent),
+    contrast("Text buton / culoare principală", theme.buttonText, theme.primary),
     contrast("Text erou / fundal erou", theme.homeHeroText, theme.homeHeroBackground),
     contrast("Text secundar erou / fundal erou", theme.homeHeroMuted, theme.homeHeroBackground),
     contrast("Text secțiune închisă / fundal", theme.homeDarkSectionText, theme.homeDarkSection),
-    contrast("Text secțiune joburi / fundal", theme.homeDarkSectionText, theme.homeJobsBackground),
+    contrast("Text secțiune joburi / fundal", theme.text, theme.homeJobsBackground),
     contrast("Text CTA / fundal CTA", theme.homeCtaText, theme.homeCtaBackground),
   ];
 }
@@ -66,6 +66,7 @@ function luminance(hex: string) {
 }
 
 const fontStacks: Record<ThemeFont, string> = {
+  manrope: "var(--font-display), Manrope, system-ui, sans-serif",
   inter: "var(--font-sans), Inter, system-ui, sans-serif",
   "source-serif-4": "var(--font-display), 'Source Serif 4', Georgia, serif",
   "system-sans": "system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
