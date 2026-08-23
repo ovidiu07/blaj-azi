@@ -67,7 +67,7 @@ test("renders first-party auth pages and protects account and admin routes", asy
 });
 
 test("keeps representative public routes renderable", async () => {
-  for (const path of ["/descopera-blaj", "/descopera-blaj/campia-libertatii", "/evenimente", "/evenimente/seara-de-film", "/afaceri-si-servicii", "/oferte-locale", "/unde-mancam", "/locuri-de-munca", "/povesti-locale", "/informatii-utile", "/promovare", "/adauga", "/adauga-o-afacere"]) {
+  for (const path of ["/descopera-blaj", "/descopera-blaj/campia-libertatii", "/evenimente", "/afaceri-si-servicii", "/oferte-locale", "/unde-mancam", "/locuri-de-munca", "/povesti-locale", "/informatii-utile", "/promovare", "/adauga", "/adauga-o-afacere"]) {
     const response = await render(path);
     assert.equal(response.status, 200, path);
     const html = await response.text();

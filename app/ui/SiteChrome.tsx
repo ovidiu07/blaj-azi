@@ -9,6 +9,7 @@ type HeaderAccount = { displayName: string; globalRole: string; unread: number }
 type Copy = Record<string, unknown>;
 type CmsLink = { href: string; label: string };
 const label = (copy: Copy, key: string) => String(copy[key] || "");
+const usableLinks = (value: unknown) => (Array.isArray(value) ? value : []).filter((item): item is CmsLink => Boolean(item && typeof item === "object" && String((item as CmsLink).label || "").trim() && /^\/(?!\/)/.test(String((item as CmsLink).href || ""))));
 
 export function Logo({ homeLabel = "Blaj Azi — Acasă" }: { homeLabel?: string }) {
   return <Link className="logo" href="/" aria-label={homeLabel}><span>Blaj</span><b>Azi</b></Link>;
@@ -16,9 +17,12 @@ export function Logo({ homeLabel = "Blaj Azi — Acasă" }: { homeLabel?: string
 
 export function SiteHeader({ account, content, searchContent }: { account: HeaderAccount; content: Copy; searchContent: Copy }) {
   const pathname = usePathname();
-  const mainNav = (Array.isArray(content.navigation) ? content.navigation : []) as CmsLink[];
-  const supplemental = (Array.isArray(content.mobileSupplemental) ? content.mobileSupplemental : []) as CmsLink[];
-  const quickLinks = (Array.isArray(searchContent.quickLinks) ? searchContent.quickLinks : []) as CmsLink[];
+  const mainNav = usableLinks(content.navigation);
+  const supplemental = usableLinks(content.mobileSupplemental);
+  const quickLinks = usableLinks(searchContent.quickLinks);
+  const primaryOrder = ["/descopera-blaj", "/evenimente", "/afaceri-si-servicii", "/unde-mancam"];
+  const primaryNav = primaryOrder.map(href => mainNav.find(item => item.href === href)).filter((item): item is CmsLink => Boolean(item));
+  const moreNav = mainNav.filter(item => !primaryOrder.includes(item.href));
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState(false);
   const menuTrigger = useRef<HTMLButtonElement>(null);
@@ -34,7 +38,8 @@ export function SiteHeader({ account, content, searchContent }: { account: Heade
         <div className="nav-wrap">
           <Logo homeLabel={label(content, "homeLabel")} />
           <nav className="desktop-nav" aria-label="Navigație principală">
-            {mainNav.map(item => <Link key={item.href} href={item.href} aria-current={pathname.startsWith(item.href)?"page":undefined}>{item.label}</Link>)}
+            {primaryNav.map(item => <Link key={item.href} href={item.href} aria-current={pathname.startsWith(item.href)?"page":undefined}>{item.label}</Link>)}
+            {moreNav.length > 0 && <details className="nav-more"><summary onKeyDown={event => { if (event.key === "Escape") { event.currentTarget.parentElement?.removeAttribute("open"); event.currentTarget.focus(); } }}>Mai mult <ChevronDown size={15} aria-hidden="true" /></summary><div>{moreNav.map(item => <Link key={item.href} href={item.href} aria-current={pathname.startsWith(item.href)?"page":undefined}>{item.label}</Link>)}</div></details>}
           </nav>
           <div className="header-actions">
             <button ref={searchTrigger} className="icon-button" aria-label="Deschide căutarea" aria-expanded={search} onClick={() => setSearch(true)}><Search size={20} /></button>
@@ -57,8 +62,14 @@ export function SiteHeader({ account, content, searchContent }: { account: Heade
 }
 
 export function SiteFooter({ showAdmin = false, content, homeLabel }: { showAdmin?: boolean; content: Copy; homeLabel: string }) {
-  const columns = (Array.isArray(content.columns) ? content.columns : []) as Array<{ heading: string; links: CmsLink[] }>;
-  return <footer className="site-footer"><div className="footer-grid"><div><Logo homeLabel={homeLabel} /><p>{label(content, "intro")}</p></div>{columns.map(column => <div key={column.heading}><h3>{column.heading}</h3>{column.links.map(item => <Link href={item.href} key={item.href}>{item.label}</Link>)}</div>)}</div><div className="footer-base"><span>{label(content, "copyrightTemplate").replace("{year}", String(new Date().getFullYear()))}</span><span>{label(content, "closing")}</span>{showAdmin && <Link href="/admin">Administrare</Link>}</div></footer>;
+  const columns = (Array.isArray(content.columns) ? content.columns : []).map(column => {
+    const value = column && typeof column === "object" ? column as { heading?: string; links?: unknown } : {};
+    return { heading: String(value.heading || "").trim(), links: usableLinks(value.links) };
+  }).filter(column => column.heading || column.links.length);
+  const intro = label(content, "intro").trim();
+  const copyright = label(content, "copyrightTemplate").replace("{year}", String(new Date().getFullYear())).trim();
+  const closing = label(content, "closing").trim();
+  return <footer className="site-footer"><div className="footer-grid"><div><Logo homeLabel={homeLabel} />{intro && <p>{intro}</p>}</div>{columns.map((column, index) => <div key={`${column.heading}-${index}`}>{column.heading && <h2>{column.heading}</h2>}{column.links.map(item => <Link href={item.href} key={item.href}>{item.label}</Link>)}</div>)}</div>{(copyright || closing || showAdmin) && <div className="footer-base">{copyright && <span>{copyright}</span>}{closing && <span>{closing}</span>}{showAdmin && <Link href="/admin">Administrare</Link>}</div>}</footer>;
 }
 
 function initials(name: string) { return name.split(/\s+/).slice(0, 2).map(part => part[0]?.toUpperCase()).join("") || "U"; }
