@@ -1,4 +1,6 @@
-export type SiteContentScope = "page" | "global" | "seo" | "auth";
+import { defaultTheme, normalizeTheme, themeFontOptions } from "./theme";
+
+export type SiteContentScope = "page" | "global" | "seo" | "auth" | "theme";
 
 export type CmsImage = {
   src: string;
@@ -22,7 +24,7 @@ export type RichTextBlock = {
 export type CmsField = {
   path: string;
   label: string;
-  kind: "short" | "multiline" | "internal-link" | "external-url" | "toggle" | "section-visibility" | "hidden" | "deletion-marker" | "enum" | "image" | "repeatable" | "richtext";
+  kind: "short" | "multiline" | "internal-link" | "external-url" | "toggle" | "section-visibility" | "hidden" | "deletion-marker" | "enum" | "image" | "repeatable" | "richtext" | "color" | "font";
   required?: boolean;
   maxLength?: number;
   options?: readonly string[];
@@ -78,6 +80,15 @@ const informativePage = (key: string, route: string, label: string, title: strin
 });
 
 export const siteContentDefinitions: readonly SiteContentDefinition[] = [
+  {
+    key: "theme.site", scope: "theme", route: "*", label: "Aspect și identitate vizuală", group: "Aspect și identitate vizuală", schemaVersion: 1,
+    defaults: { ...defaultTheme },
+    fields: [
+      {path:"canvas",label:"Fundal general",kind:"color",group:"Culori globale"},{path:"surface",label:"Suprafețe și carduri",kind:"color",group:"Culori globale"},{path:"primary",label:"Culoare principală",kind:"color",group:"Culori globale"},{path:"primaryDark",label:"Culoare principală închisă",kind:"color",group:"Culori globale"},{path:"accent",label:"Accent și acțiuni",kind:"color",group:"Culori globale"},{path:"accentDark",label:"Accent la interacțiune",kind:"color",group:"Culori globale"},{path:"accentSoft",label:"Accent discret",kind:"color",group:"Culori globale"},{path:"highlight",label:"Evidențiere",kind:"color",group:"Culori globale"},{path:"text",label:"Text principal",kind:"color",group:"Culori globale"},{path:"textMuted",label:"Text secundar",kind:"color",group:"Culori globale"},{path:"border",label:"Contururi",kind:"color",group:"Culori globale"},{path:"focus",label:"Indicator de focalizare",kind:"color",group:"Culori globale"},{path:"headerBackground",label:"Fundal antet",kind:"color",group:"Culori globale"},{path:"buttonText",label:"Text pe butoane",kind:"color",group:"Culori globale"},
+      {path:"headingFont",label:"Titluri",kind:"font",options:themeFontOptions,group:"Fonturi globale"},{path:"bodyFont",label:"Text curent",kind:"font",options:themeFontOptions,group:"Fonturi globale"},{path:"interfaceFont",label:"Interfață și butoane",kind:"font",options:themeFontOptions,group:"Fonturi globale"},
+      {path:"homeHeroBackground",label:"Fundal erou",kind:"color",group:"Pagina principală"},{path:"homeHeroText",label:"Text erou",kind:"color",group:"Pagina principală"},{path:"homeHeroMuted",label:"Text secundar erou",kind:"color",group:"Pagina principală"},{path:"homeDarkSection",label:"Fundal secțiune editorială",kind:"color",group:"Pagina principală"},{path:"homeDarkSectionText",label:"Text secțiuni închise",kind:"color",group:"Pagina principală"},{path:"homeJobsBackground",label:"Fundal secțiune joburi",kind:"color",group:"Pagina principală"},{path:"homeCardBackground",label:"Fundal carduri",kind:"color",group:"Pagina principală"},{path:"homeAlternateBackground",label:"Fundal alternativ",kind:"color",group:"Pagina principală"},{path:"homeCtaBackground",label:"Fundal îndemn final",kind:"color",group:"Pagina principală"},{path:"homeCtaText",label:"Text îndemn final",kind:"color",group:"Pagina principală"},
+    ],
+  },
   {
     key: "home", scope: "page", route: "/", label: "Pagina principală", group: "Pagina principală", schemaVersion: 2,
     defaults: {
@@ -201,7 +212,8 @@ export function validateSiteContent(key: string, raw: unknown): Record<string, u
   const definition = siteContentByKey.get(key);
   if (!definition) throw new Error("Cheie CMS necunoscută.");
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) throw new Error("Conținutul trebuie să fie un obiect valid.");
-  return validateFields(definition.fields, raw as Record<string, unknown>, "");
+  const validated = validateFields(definition.fields, raw as Record<string, unknown>, "");
+  return key === "theme.site" ? normalizeTheme(validated) : validated;
 }
 
 function validateFields(fields: readonly CmsField[], raw: Record<string, unknown>, prefix: string): Record<string, unknown> {
@@ -236,7 +248,8 @@ function validateFields(fields: readonly CmsField[], raw: Record<string, unknown
     if (/[<>]/.test(stringValue)) throw new Error(`${label}: HTML-ul nu este permis.`);
     if (field.kind === "internal-link" && stringValue && !safeInternalHref(stringValue)) throw new Error(`${label}: linkul intern nu este sigur.`);
     if (field.kind === "external-url" && stringValue && !safeExternalHref(stringValue)) throw new Error(`${label}: adresa trebuie să folosească HTTP sau HTTPS.`);
-    if (field.kind === "enum" && stringValue && field.options && !field.options.includes(stringValue)) throw new Error(`${label}: valoare neacceptată.`);
+    if ((field.kind === "enum" || field.kind === "font") && stringValue && field.options && !field.options.includes(stringValue)) throw new Error(`${label}: valoare neacceptată.`);
+    if (field.kind === "color" && !/^#[0-9a-f]{6}$/i.test(stringValue)) throw new Error(`${label}: folosește o culoare HEX completă.`);
     output[field.path] = stringValue;
   }
   return output;

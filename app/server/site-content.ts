@@ -8,6 +8,7 @@ import {
   validateSiteContent,
 } from "../site-content";
 import { isAdmin, type LocalAccount, PlatformError } from "./platform";
+import { validateTheme } from "../theme";
 
 export type SiteContentEntryRow = {
   key: string;
@@ -117,6 +118,7 @@ export async function siteContentAction(account: LocalAccount, key: string, acti
 
   if (action === "publish") {
     const draft = mergeWithSiteDefaults(key, JSON.parse(row.draft_json));
+    if (key === "theme.site") validateTheme(draft);
     await assertMediaReferences(draft, true, db);
     const snapshot = JSON.stringify(draft);
     const results = await db.batch([
@@ -143,6 +145,7 @@ export async function siteContentAction(account: LocalAccount, key: string, acti
     const revision = await db.prepare("SELECT snapshot FROM site_content_revisions WHERE id=? AND entry_key=? LIMIT 1").bind(revisionId, key).first<{ snapshot: string }>();
     if (!revision) throw new PlatformError(404, "Revizia nu există.");
     const restored = mergeWithSiteDefaults(key, JSON.parse(revision.snapshot));
+    if (key === "theme.site") validateTheme(restored);
     await assertMediaReferences(restored, true, db);
     const snapshot = JSON.stringify(restored);
     const results = await db.batch([

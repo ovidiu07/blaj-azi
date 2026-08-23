@@ -8,6 +8,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { AdminSiteContentEntry } from "../server/site-content";
 import type { CmsField, CmsImage, RichTextBlock } from "../site-content";
 import { cmsImageUrl, resolveCmsImage } from "../site-content";
+import { defaultTheme, themeContrastChecks, themeCssProperties } from "../theme";
 
 type Revision = { id: number; revision_number: number; action: string; created_at: string; actor_name: string | null; snapshot: string };
 type MediaItem = { id: number; title: string | null; original_filename: string | null; alt_text: string | null; photographer: string | null; source_url: string | null; license: string | null; approval_status: string; media_status: string };
@@ -27,6 +28,7 @@ export function SiteContentEditor({ initial, revisions: initialRevisions }: { in
   const [error, setError] = useState("");
   const dirty = JSON.stringify(content) !== savedContent;
   const fieldGroups = useMemo(() => groupFields(initial.fields), [initial.fields]);
+  const themeChecks = initial.key === "theme.site" ? themeContrastChecks(content) : [];
 
   async function saveDraft() {
     setBusy("save"); setError(""); setMessage("");
@@ -60,6 +62,7 @@ export function SiteContentEditor({ initial, revisions: initialRevisions }: { in
     <div className="cms-editor-meta"><span className={`status-pill ${initial.hasDraftChanges || dirty ? "status-pending_review" : "status-published"}`}>{initial.hasDraftChanges || dirty ? "Ciornă" : "Publicat"}</span><span>Versiunea {version}</span><span>Ultima editare: {initial.updatedByName || "sistem"}{initial.updatedAt ? ` · ${formatDate(initial.updatedAt)}` : ""}</span><span>Ultima publicare: {initial.publishedByName || "migrare"}{initial.publishedAt ? ` · ${formatDate(initial.publishedAt)}` : ""}</span></div>
     {error && <div className="form-alert form-alert-error" role="alert"><strong>Verifică modificările.</strong><p>{error}</p></div>}
     {message && <p className="success-message" role="status" aria-live="polite">{message}</p>}
+    {initial.key === "theme.site" && <ThemeInspector content={content} checks={themeChecks} onReset={() => setContent({ ...defaultTheme })} />}
     <form className="cms-editor-form" onSubmit={event => { event.preventDefault(); void saveDraft(); }}>
       {fieldGroups.map(group => <fieldset className="cms-field-group" key={group.label}><legend>{group.label}</legend>{group.fields.map(field => <FieldEditor key={field.path} field={field} value={content[field.path]} publishedValue={initial.published[field.path]} onChange={next => setContent(current => ({ ...current, [field.path]: next }))} />)}</fieldset>)}
       <div className="cms-sticky-actions"><button className="button" disabled={Boolean(busy) || !dirty} type="submit"><Save />{busy === "save" ? "Se salvează…" : "Salvează ciorna"}</button><Link className="button button-outline" target="_blank" href={`/admin/previzualizare/${encodeURIComponent(initial.key)}`}><Eye />Previzualizează</Link><button className="button" disabled={Boolean(busy)} type="button" onClick={() => action("publish")}><Send />{busy === "publish" ? "Se publică…" : "Publică"}</button><button className="button button-outline" disabled={Boolean(busy) || (!initial.hasDraftChanges && !dirty)} type="button" onClick={() => action("discard")}><X />Renunță la ciornă</button></div>
@@ -77,10 +80,20 @@ function FieldEditor({ field, value, publishedValue, onChange }: { field: CmsFie
   if (field.kind === "image") return <ImageField label={field.label} value={resolveCmsImage(value)} publishedValue={publishedValue} onChange={onChange} />;
   if (field.kind === "repeatable") return <RepeatableField field={field} value={Array.isArray(value) ? value : []} onChange={onChange} />;
   if (field.kind === "richtext") return <RichTextField label={field.label} value={Array.isArray(value) ? value as RichTextBlock[] : []} onChange={onChange} />;
+  if (field.kind === "color") return <div className="cms-field-control cms-color-control"><label>{field.label}<span className="cms-color-input"><input aria-label={`${field.label} — selector`} type="color" value={String(value || "#000000")} onChange={event => onChange(event.target.value)} /><input aria-label={`${field.label} — valoare HEX`} value={String(value ?? "")} pattern="#[0-9a-fA-F]{6}" onChange={event => onChange(event.target.value)} /></span></label>{String(value)!==String(publishedValue)&&<div className="cms-field-actions"><button type="button" onClick={()=>onChange(publishedValue)}><RotateCcw/>Revino la valoarea publicată</button></div>}</div>;
+  if (field.kind === "font") return <div className="cms-field-control"><label>{field.label}<select value={String(value ?? "")} onChange={event => onChange(event.target.value)}>{field.options?.map(option => <option value={option} key={option}>{fontLabel(option)}</option>)}</select><span className="cms-font-sample" style={{fontFamily:fontFamily(String(value))}}>Blajul de azi — oameni, locuri și povești</span></label>{String(value)!==String(publishedValue)&&<div className="cms-field-actions"><button type="button" onClick={()=>onChange(publishedValue)}><RotateCcw/>Revino la valoarea publicată</button></div>}</div>;
   if (field.kind === "enum") return <div className="cms-field-control"><label>{field.label}<select value={String(value ?? "")} required={field.required} onChange={event => onChange(event.target.value)}>{!field.required && <option value="">— Fără valoare —</option>}{field.options?.map(option => <option key={option}>{option}</option>)}</select></label><ScalarActions value={value} publishedValue={publishedValue} onClear={() => onChange("")} onRestore={() => onChange(publishedValue)} /></div>;
   const common = { value: String(value ?? ""), required: field.required, maxLength: field.maxLength, onChange: (event: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => onChange(event.target.value) };
   return <div className="cms-field-control"><label>{field.label}{field.help && <small>{field.help}</small>}{field.kind === "multiline" ? <textarea {...common} rows={5} /> : <input {...common} type={field.kind === "external-url" ? "url" : "text"} />}</label><ScalarActions value={value} publishedValue={publishedValue} onClear={() => onChange("")} onRestore={() => onChange(publishedValue)} /></div>;
 }
+
+function ThemeInspector({content,checks,onReset}:{content:Record<string,unknown>;checks:ReturnType<typeof themeContrastChecks>;onReset:()=>void}) {
+  const [viewport,setViewport]=useState<"mobile"|"tablet"|"desktop">("desktop");
+  return <section className="theme-inspector"><header><div><h2>Previzualizare și contrast</h2><p>Schimbările sunt private până la publicare. Publicarea este blocată dacă o combinație esențială nu atinge 4,5:1.</p></div><button type="button" className="button button-outline" onClick={onReset}><RotateCcw/>Revino la valorile implicite</button></header><div className="theme-viewport-controls" role="group" aria-label="Lățime previzualizare">{(["mobile","tablet","desktop"] as const).map(item=><button type="button" aria-pressed={viewport===item} onClick={()=>setViewport(item)} key={item}>{item==="mobile"?"Mobil":item==="tablet"?"Tabletă":"Desktop"}</button>)}</div><div className={`theme-sample theme-sample-${viewport}`} style={themeCssProperties(content) as React.CSSProperties}><div className="theme-sample-header"><strong>Blaj Azi</strong><span>Descoperă · Evenimente · Servicii</span><button>Adaugă</button></div><div className="theme-sample-body"><p className="eyebrow">Ghidul comunității</p><h2>Tot ce contează în Blaj</h2><p>Un exemplu de text principal și <span>text secundar</span>, afișat cu valorile ciornei.</p><button>Acțiune principală</button></div></div><div className="theme-contrast-grid">{checks.map(check=><article className={check.pass?"is-pass":"is-fail"} key={check.label}><span className="theme-contrast-swatch" style={{background:check.background,color:check.foreground}}>Aa</span><div><strong>{check.label}</strong><span>{check.ratio.toFixed(2)}:1 · {check.pass?"Conform AA":"Sub pragul AA"}</span></div></article>)}</div></section>;
+}
+
+function fontLabel(value:string){return value==="inter"?"Inter":value==="source-serif-4"?"Source Serif 4":value==="system-sans"?"Fontul sistemului":"Georgia"}
+function fontFamily(value:string){return value==="source-serif-4"?"var(--font-display), Georgia, serif":value==="georgia"?"Georgia, serif":value==="system-sans"?"system-ui, sans-serif":"var(--font-sans), Inter, sans-serif"}
 
 function ScalarActions({ value, publishedValue, onClear, onRestore }: { value: unknown; publishedValue: unknown; onClear: () => void; onRestore: () => void }) {
   const current = String(value ?? "");

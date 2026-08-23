@@ -1,9 +1,12 @@
+import type { RichTextDocument } from "./rich-text";
+
 export type PublicBase = {
   id: string;
   contentId?: number;
   entityId?: number;
   locality?: string;
   description?: string;
+  descriptionRichText?: RichTextDocument;
   source?: string;
   isDemo?: boolean;
   updatedAt?: string;
@@ -20,10 +23,10 @@ export type PublicEvent = PublicBase & {
   accessibility?: string; isFree: boolean; image: string;
 };
 export type PublicBusiness = PublicBase & { name: string; category: string; phone?: string; email?: string; website?: string; promoted: boolean; verified?: boolean };
-export type PublicOffer = PublicBase & { title: string; business: string; category?: string; price: string; priceValue?: number; old: string; oldPriceValue?: number; startsAt: string; endsAt: string; until: string; terms?: string; availability?: string; promoted?: boolean };
+export type PublicOffer = PublicBase & { title: string; business: string; category?: string; price: string; priceValue?: number; old: string; oldPriceValue?: number; startsAt: string; endsAt: string; until: string; terms?: string; termsRichText?:RichTextDocument; availability?: string; promoted?: boolean };
 export type PublicRestaurant = PublicBase & { name: string; type: string; dish: string; price: string; services: string; phone?: string; delivery: boolean; pickup: boolean; dietaryOptions?: string };
-export type PublicJob = PublicBase & { title: string; company: string; type: string; schedule: string; salary: string; salaryDisclosed: boolean; transport: boolean; requirements?: string; benefits?: string; applicationMethod?: string; applyUrl?: string; deadline?: string };
+export type PublicJob = PublicBase & { title: string; company: string; type: string; schedule: string; salary: string; salaryDisclosed: boolean; transport: boolean; requirements?: string; requirementsRichText?:RichTextDocument; benefits?: string; benefitsRichText?:RichTextDocument; applicationMethod?: string; applyUrl?: string; deadline?: string };
 export type PublicPlace = PublicBase & { title: string; eyebrow: string; image: string; text: string; source: string; accessibility?: string };
-export type PublicPost = PublicBase & { title: string; excerpt: string; body: string; type: string; category?: string; author: string; business?: string };
+export type PublicPost = PublicBase & { title: string; excerpt: string; excerptRichText?:RichTextDocument; body: string; bodyRichText?:RichTextDocument; type: string; category?: string; author: string; business?: string };
 export type PublicCatalog = { events: PublicEvent[]; businesses: PublicBusiness[]; offers: PublicOffer[]; restaurants: PublicRestaurant[]; jobs: PublicJob[]; places: PublicPlace[]; posts: PublicPost[] };
 export type PublicViewer = { signedIn: boolean; canEdit: boolean; canAdmin: boolean };

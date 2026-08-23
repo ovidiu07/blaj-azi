@@ -2,9 +2,10 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { CreateHub, DiscoverPage, ListingPage, StaticPage } from "../../../ui/PublicPages";
 import { HomeExperience } from "../../../ui/HomeExperience";
-import { loadAdminSiteContent } from "../../../server/site-content";
+import { loadAdminSiteContent, loadPublishedSiteContent } from "../../../server/site-content";
 import { loadPublicCatalog } from "../../../server/public-data";
 import { isAdmin, requireAccountForPage } from "../../../server/platform";
+import { homeThemeCssProperties, themeCssProperties } from "../../../theme";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Previzualizare ciornă", robots: { index: false, follow: false } };
@@ -18,10 +19,11 @@ export default async function CmsDraftPreview({ params }: { params: Promise<{ ke
   const key = decodeURIComponent((await params).key);
   const account = await requireAccountForPage(`/admin/previzualizare/${encodeURIComponent(key)}`, "/admin/conectare");
   if (!isAdmin(account)) notFound();
-  const [entry, catalog] = await Promise.all([loadAdminSiteContent(account, key).catch(() => null), loadPublicCatalog()]);
+  const [entry, catalog, homeEntry, publishedTheme] = await Promise.all([loadAdminSiteContent(account, key).catch(() => null), loadPublicCatalog(), key === "theme.site" ? loadAdminSiteContent(account, "home") : Promise.resolve(null), loadPublishedSiteContent("theme.site")]);
   if (!entry) notFound();
   let preview: React.ReactNode;
-  if (key === "home") preview = <HomeExperience catalog={catalog} content={entry.draft} />;
+  if (key === "theme.site") preview = <div className="home-theme theme-draft-preview" style={{...themeCssProperties(entry.draft),...homeThemeCssProperties(entry.draft)} as React.CSSProperties}><HomeExperience catalog={catalog} content={homeEntry?.published || {}} /></div>;
+  else if (key === "home") preview = <div className="home-theme" style={homeThemeCssProperties(publishedTheme) as React.CSSProperties}><HomeExperience catalog={catalog} content={entry.draft} /></div>;
   else if (key === "discover") preview = <DiscoverPage catalog={catalog} content={entry.draft} />;
   else if (listings[key]) preview = <ListingPage slug={listings[key]} catalog={catalog} content={entry.draft} />;
   else if (key === "forms.hub") preview = <CreateHub content={entry.draft} />;

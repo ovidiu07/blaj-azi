@@ -11,7 +11,7 @@ const owner = { ...admin, id:42, globalRole:"platform_owner" };
 const ordinary = { ...admin, id:43, globalRole:"user" };
 
 test("every CMS default validates and Romanian/editorial schemas reject unsafe input", () => {
-  assert.equal(cms.siteContentDefinitions.length, 24);
+  assert.equal(cms.siteContentDefinitions.length, 25);
   for (const definition of cms.siteContentDefinitions) assert.deepEqual(cms.validateSiteContent(definition.key, definition.defaults), definition.defaults, definition.key);
   assert.equal(cms.safeInternalHref("/evenimente?period=weekend"), "/evenimente?period=weekend");
   assert.equal(cms.safeInternalHref("//evil.example"), null);
@@ -25,8 +25,8 @@ test("every CMS default validates and Romanian/editorial schemas reject unsafe i
 test("CMS migrations are additive, seeded idempotently, and preserve integrity", async () => {
   const sqlite = new DatabaseSync(":memory:");
   try {
-    for (let index=0; index<=7; index++) {
-      const names = ["0000_bumpy_vanisher","0001_lame_elektra","0002_great_mastermind","0003_steep_tomorrow_man","0004_curved_meggan","0005_robust_namor","0006_lowly_silverclaw","0007_curly_mandrill"];
+    for (let index=0; index<=8; index++) {
+      const names = ["0000_bumpy_vanisher","0001_lame_elektra","0002_great_mastermind","0003_steep_tomorrow_man","0004_curved_meggan","0005_robust_namor","0006_lowly_silverclaw","0007_curly_mandrill","0008_theme_site"];
       sqlite.exec((await source(`../drizzle/${names[index]}.sql`)).replaceAll("--> statement-breakpoint", ""));
     }
     assert.equal(sqlite.prepare("SELECT COUNT(*) count FROM site_content_entries").get().count, cms.siteContentDefinitions.length);
@@ -69,6 +69,18 @@ test("publishing enforces approved active media while drafts may reference pendi
   await db.prepare("UPDATE media_assets SET approval_status='approved' WHERE id=900").run();
   await service.siteContentAction(admin,"home","publish",2,undefined,db);
   assert.equal((await service.loadPublishedSiteContent("home",db)).heroImage.mediaId,900);
+});
+
+test("theme drafts may be explored privately but weak contrast cannot be published or restored", async () => {
+  const db=await database();
+  const weak={...cms.defaultSiteContent("theme.site"),text:"#faf8f4"};
+  const saved=await service.saveSiteContentDraft(admin,"theme.site",weak,1,db);
+  assert.equal(saved.version,2);
+  assert.equal((await service.loadPublishedSiteContent("theme.site",db)).text,"#1e2426");
+  await assert.rejects(()=>service.siteContentAction(admin,"theme.site","publish",2,undefined,db),/Contrast insuficient/);
+  const draft=await service.loadAdminSiteContent(admin,"theme.site",db);
+  assert.equal(draft.draft.text,"#faf8f4");
+  assert.equal(draft.published.text,"#1e2426");
 });
 
 test("homepage accepts intentional blanks, optional links, cleared media, and upgrades legacy records by presence", async () => {
@@ -136,7 +148,7 @@ test("homepage snapshots preserve blank, hidden, deleted, reordered, and cleared
   assert.deepEqual(restored.published,target);
 });
 
-async function database(){const sqlite=new DatabaseSync(":memory:");for(const name of ["0000_bumpy_vanisher","0001_lame_elektra","0002_great_mastermind","0003_steep_tomorrow_man","0004_curved_meggan","0005_robust_namor","0006_lowly_silverclaw","0007_curly_mandrill"]){sqlite.exec((await source(`../drizzle/${name}.sql`)).replaceAll("--> statement-breakpoint",""));}return new D1(sqlite)}
+async function database(){const sqlite=new DatabaseSync(":memory:");for(const name of ["0000_bumpy_vanisher","0001_lame_elektra","0002_great_mastermind","0003_steep_tomorrow_man","0004_curved_meggan","0005_robust_namor","0006_lowly_silverclaw","0007_curly_mandrill","0008_theme_site"]){sqlite.exec((await source(`../drizzle/${name}.sql`)).replaceAll("--> statement-breakpoint",""));}return new D1(sqlite)}
 async function source(path){return readFile(new URL(path,import.meta.url),"utf8")}
 class D1{constructor(sqlite){this.sqlite=sqlite}prepare(sql){return new Statement(this.sqlite,sql)}async batch(statements){this.sqlite.exec("BEGIN");try{const results=statements.map(statement=>statement.execute());this.sqlite.exec("COMMIT");return results}catch(error){this.sqlite.exec("ROLLBACK");throw error}}}
 class Statement{constructor(sqlite,sql){this.sqlite=sqlite;this.sql=sql;this.values=[]}bind(...values){this.values=values;return this}async first(){return this.sqlite.prepare(this.sql).get(...this.values)||null}async all(){return{results:this.sqlite.prepare(this.sql).all(...this.values)}}async run(){return this.execute()}execute(){const result=this.sqlite.prepare(this.sql).run(...this.values);return{success:true,meta:{changes:Number(result.changes),last_row_id:Number(result.lastInsertRowid)}}}}

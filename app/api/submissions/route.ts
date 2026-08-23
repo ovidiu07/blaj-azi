@@ -1,6 +1,7 @@
 import { env } from "cloudflare:workers";
 import { getRuntimeDb } from "../../../db/runtime";
 import { assertSameOrigin, getOptionalAccount } from "../../server/platform";
+import { richTextToPlainText } from "../../rich-text";
 
 const allowedTypes = new Set(["business", "event", "offer", "job", "contribution", "contact", "newsletter"]);
 const payloadFields: Record<string, string[]> = {
@@ -16,16 +17,23 @@ function clean(form: FormData, key: string, max = 4000) {
   return String(form.get(key) || "").trim().slice(0, max);
 }
 
+function cleanNarrative(form: FormData, key: string, max = 4000) {
+  const value = form.get(key);
+  try { return richTextToPlainText(value).slice(0, max); }
+  catch { return clean(form, key, max); }
+}
+
 function validateTypePayload(type: string, form: FormData) {
   const required: Record<string, string[]> = {
-    business: ["title", "category", "locality", "description", "address", "phone"],
+    business: ["title", "locality", "description", "address", "phone"],
     event: ["title", "category", "locality", "description", "startsAt", "venue", "organizer"],
     offer: ["title", "description", "businessName", "currentPrice", "validFrom", "validUntil", "terms"],
     job: ["title", "locality", "description", "employer", "employmentType", "applicationMethod", "deadline"],
     contribution: ["title", "description", "contributionType", "author", "license"],
     contact: ["description", "issueType"],
   };
-  const missing = (required[type] || []).find((key) => !clean(form, key));
+  const narratives = new Set(["description", "terms", "requirements", "benefits"]);
+  const missing = (required[type] || []).find((key) => !(narratives.has(key) ? cleanNarrative(form, key) : clean(form, key)));
   if (missing) return `Câmp obligatoriu lipsă: ${missing}`;
   if (type === "event" && Number.isNaN(Date.parse(clean(form, "startsAt")))) return "Data evenimentului nu este validă.";
   if (type === "offer" && (Number(clean(form, "currentPrice")) < 0 || Date.parse(clean(form, "validUntil")) < Date.parse(clean(form, "validFrom")))) return "Perioada sau prețul ofertei nu este valid.";
@@ -83,9 +91,9 @@ export async function POST(request: Request) {
       mediaKey = `submissions/${crypto.randomUUID()}.${extension}`;
       await env.MEDIA.put(mediaKey, bytes, { httpMetadata: { contentType: detected }, customMetadata: { originalName: media.name.slice(0, 180), ownerUserId: account ? String(account.id) : "anonymous" } });
     }
-    const payload = Object.fromEntries((payloadFields[type] || []).map((key) => [key, clean(form, key, 1000)]).filter(([, value]) => value));
+    const payload = Object.fromEntries((payloadFields[type] || []).map((key) => [key, ["terms", "requirements", "benefits"].includes(key) ? cleanNarrative(form, key, 1000) : clean(form, key, 1000)]).filter(([, value]) => value));
     if (target) Object.assign(payload, { targetContentId:target.id, targetType:target.type, targetTitle:target.title, targetSlug:target.slug });
-    const result=await db.prepare(`INSERT INTO submissions (type, contributor_name, email, title, locality, category, description, source_url, media_key, payload, rights_confirmed, consent, status, user_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 'pending_review', ?)`).bind(type, account?.displayName || clean(form,"name",180), account?.email || email, clean(form,"title",240), clean(form,"locality",100), clean(form,"category",120), clean(form,"description"), clean(form,"source",800), mediaKey, JSON.stringify(payload), form.get("rights") ? 1 : 0, account?.id ?? null).run();
+    const result=await db.prepare(`INSERT INTO submissions (type, contributor_name, email, title, locality, category, description, source_url, media_key, payload, rights_confirmed, consent, status, user_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 'pending_review', ?)`).bind(type, account?.displayName || clean(form,"name",180), account?.email || email, clean(form,"title",240), clean(form,"locality",100), clean(form,"category",120), cleanNarrative(form,"description"), clean(form,"source",800), mediaKey, JSON.stringify(payload), form.get("rights") ? 1 : 0, account?.id ?? null).run();
     return Response.json({ ok:true, status:"pending_review", reference:`BA-${String(result.meta.last_row_id).padStart(6,"0")}`, id:result.meta.last_row_id }, { status:201 });
   } catch (error) {
     console.error("submission_failed", error instanceof Error ? error.message : "unknown");
