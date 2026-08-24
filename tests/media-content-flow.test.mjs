@@ -53,6 +53,7 @@ const db = new D1(sqlite);
 globalThis.__BLAJ_TEST_ENV__ = { DB: db };
 
 const content = await import("../app/server/content.ts");
+const publicData = await import("../app/server/public-data.ts");
 const { ImageValidationError, inspectImage, MAX_IMAGE_BYTES } = await import("../app/server/media.ts");
 
 const user = account(91, "user");
@@ -112,6 +113,11 @@ test("published revision reload uses the authoritative content version instead o
   const published = await content.adminModerate(admin, created.id, "publish", "Verificat");
   assert.equal(submitted.version, 2);
   assert.equal(published.version, 3);
+  assert.equal((await db.prepare("SELECT approval_status FROM media_assets WHERE id=?").bind(first).first()).approval_status, "approved");
+  assert.equal((await db.prepare("SELECT COUNT(*) count FROM audit_logs WHERE action='media.approved_via_content' AND entity_id=?").bind(String(first)).first()).count, 1);
+  const publicEvent = (await publicData.loadPublicCatalog(new Date("2026-08-24T10:00:00Z"))).events.find(item => item.contentId === created.id);
+  assert.equal(publicEvent?.image, `/api/media/${first}`);
+  assert.equal(publicEvent?.imageAlt, "Imagine pentru event");
 
   const replacement = await media(user.id, "revision-two.png", "Fotografie revizuită");
   const draftRevision = await content.updateContent(user, created.id, { ...payload("event", 31, replacement), version: published.version });
@@ -125,6 +131,35 @@ test("published revision reload uses the authoritative content version instead o
   assert.equal(reopened.media?.id, replacement);
   const saved = await content.updateContent(user, created.id, { ...payload("event", 32, replacement), version: reopened.version });
   assert.equal(saved.version, 7);
+});
+
+test("moderation refuses rejected selected media instead of silently publishing without it", async () => {
+  const selected = await media(user.id, "rejected.png", "Imagine respinsă");
+  const created = await content.createContent(user, payload("community_post", 35, selected));
+  await content.contentAction(user, created.id, "submit", created.version);
+  await db.prepare("UPDATE media_assets SET approval_status='rejected' WHERE id=?").bind(selected).run();
+  await assert.rejects(
+    () => content.adminModerate(admin, created.id, "publish", "Imagine neverificată"),
+    error => error.status === 409 && error.code === "media_rejected",
+  );
+  const row = await db.prepare("SELECT status,moderation_state,published_media_id FROM content_records WHERE id=?").bind(created.id).first();
+  assert.equal(row.status, "pending_review");
+  assert.equal(row.moderation_state, "pending_review");
+  assert.equal(row.published_media_id, null);
+});
+
+test("an author cannot restore public content with a newly pending image", async () => {
+  const approved = await media(user.id, "approved-before-archive.png", "Imagine aprobată");
+  const created = await content.createContent(user, payload("local_story", 36, approved));
+  await content.contentAction(user, created.id, "submit", created.version);
+  const published = await content.adminModerate(admin, created.id, "publish", "Verificat");
+  const archived = await content.contentAction(user, created.id, "archive", published.version);
+  await db.prepare("UPDATE media_assets SET approval_status='pending' WHERE id=?").bind(approved).run();
+  await assert.rejects(
+    () => content.contentAction(user, created.id, "restore", archived.version),
+    error => error.status === 409 && error.code === "media_not_approved",
+  );
+  assert.equal((await db.prepare("SELECT status FROM content_records WHERE id=?").bind(created.id).first()).status, "archived");
 });
 
 test("a genuine two-editor conflict returns 409 without overwriting the first save", async () => {

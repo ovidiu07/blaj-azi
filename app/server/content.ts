@@ -365,9 +365,17 @@ async function inputForRow(db: D1Database, row: ContentRow): Promise<ContentInpu
   };
 }
 
-function assertPublicationReady(input: ContentInput) {
+async function assertPublicationReady(db: D1Database, input: ContentInput, allowPendingMedia = true): Promise<{ id:number; approvalStatus:string } | null> {
   if (input.type === "business") validateBusinessPublicationInput(input);
   if (input.primaryMediaState === "selected" && input.primaryMediaId && !cleanText(input.primaryMediaAltText,500)) throw new PlatformError(400,"Adaugă un text alternativ semnificativ pentru imagine.","media_alt_required");
+  if (input.primaryMediaState !== "selected") return null;
+  const mediaId=numberOrNull(input.primaryMediaId);
+  if(!mediaId)throw new PlatformError(409,"Imaginea selectată nu mai este disponibilă.","media_unavailable");
+  const media=await db.prepare("SELECT approval_status,media_status FROM media_assets WHERE id=? LIMIT 1").bind(mediaId).first<{approval_status:string;media_status:string}>();
+  if(!media||media.media_status!=="active")throw new PlatformError(409,"Imaginea selectată nu mai este disponibilă.","media_unavailable");
+  if(media.approval_status==="rejected")throw new PlatformError(409,"Imaginea selectată a fost respinsă. Înlocuiește-o înainte de publicare.","media_rejected");
+  if(media.approval_status!=="approved"&&(!allowPendingMedia||media.approval_status!=="pending"))throw new PlatformError(409,"Imaginea selectată trebuie aprobată înainte de publicare.","media_not_approved");
+  return {id:mediaId,approvalStatus:media.approval_status};
 }
 
 export async function contentAction(account: LocalAccount, id: number, action: string, expectedVersion?:number) {
@@ -387,7 +395,7 @@ export async function contentAction(account: LocalAccount, id: number, action: s
     let input: ContentInput;
     try { input = JSON.parse(revision.snapshot) as ContentInput; }
     catch { throw new PlatformError(400, "Revizia nu poate fi citită."); }
-    assertPublicationReady(input);
+    await assertPublicationReady(db,input);
     await db.batch([
       db.prepare("UPDATE content_revisions SET moderation_status='pending_review',moderator_id=NULL,moderator_note=NULL WHERE id=?").bind(revision.id),
       db.prepare("UPDATE content_records SET moderation_state='pending_review',submitted_at=CURRENT_TIMESTAMP,updated_at=CURRENT_TIMESTAMP,version=version+1 WHERE id=? AND version=?").bind(id,row.version),
@@ -398,7 +406,7 @@ export async function contentAction(account: LocalAccount, id: number, action: s
   }
 
   if (action === "submit" && ["draft", "needs_changes"].includes(row.status)) {
-    assertPublicationReady(await inputForRow(db,row));
+    await assertPublicationReady(db,await inputForRow(db,row));
     statement = db.prepare(`UPDATE content_records SET status='pending_review',moderation_state='pending_review',visibility='private',submitted_at=${now},updated_at=${now},version=version+1 WHERE id=? AND version=?`).bind(id, row.version);
     nextStatus = "pending_review";
   } else if (action === "withdraw" && row.status === "published" && row.moderation_state === "pending_review") {
@@ -417,7 +425,7 @@ export async function contentAction(account: LocalAccount, id: number, action: s
     statement = db.prepare(`UPDATE content_records SET status='archived',moderation_state='archived',visibility='private',archived_at=${now},updated_at=${now},version=version+1 WHERE id=? AND version=?`).bind(id, row.version);
     nextStatus = "archived";
   } else if (action === "restore" && row.status === "archived") {
-    assertPublicationReady(await inputForRow(db,row));
+    await assertPublicationReady(db,await inputForRow(db,row),false);
     statement = db.prepare(`UPDATE content_records SET status='published',moderation_state='approved',visibility='public',archived_at=NULL,updated_at=${now},version=version+1 WHERE id=? AND version=?`).bind(id, row.version);
     nextStatus = "published";
   } else if (action === "delete" && ["draft", "needs_changes", "rejected"].includes(row.status)) {
@@ -491,13 +499,12 @@ export async function adminModerate(account: LocalAccount, id: number, action: s
   let revisionInput:ContentInput|null=null;
   if(pendingRevision&&row.status==="published"){
     try{revisionInput=JSON.parse(pendingRevision.snapshot) as ContentInput}catch{throw new PlatformError(400,"Revizia nu poate fi citită.")}
-    if(action==="publish"||action==="approve")assertPublicationReady(revisionInput);
     if(action==="publish"||action==="approve")target={status:"published",moderation:"approved",visibility:"public"};
     else if(action==="needs_changes")target={status:"published",moderation:"needs_changes",visibility:"public"};
     else if(action==="reject")target={status:"published",moderation:"approved",visibility:"public"};
   }
   const publicationInput=!revisionInput&&["publish","approve","restore","schedule"].includes(action)?await inputForRow(db,row):revisionInput;
-  if(publicationInput&&["publish","approve","restore","schedule"].includes(action))assertPublicationReady(publicationInput);
+  const publicationMedia=publicationInput&&["publish","approve","restore","schedule"].includes(action)?await assertPublicationReady(db,publicationInput):null;
   const publishedSnapshot = (action === "publish" || action === "restore" || (revisionInput&&action==="approve"))
     ? JSON.stringify({ ...(publicationInput||{}), title: publicationInput?.title||row.title, excerpt: publicationInput?.excerpt||row.excerpt, type: row.type, entityId: row.entity_id, version: row.version + 1 })
     : row.published_snapshot;
@@ -524,6 +531,10 @@ export async function adminModerate(account: LocalAccount, id: number, action: s
   if(action==="soft_delete")statements.push(db.prepare("UPDATE content_records SET deleted_at=CURRENT_TIMESTAMP,deleted_by=?,deletion_reason=? WHERE id=?").bind(account.id,cleanText(note,2000),id));
   if(action==="restore_deleted")statements.push(db.prepare("UPDATE content_records SET deleted_at=NULL,deleted_by=NULL,deletion_reason=NULL WHERE id=?").bind(id));
   if(action==="schedule")statements.push(db.prepare("UPDATE content_records SET scheduled_at=? WHERE id=?").bind(cleanText(scheduledAt,40,true),id));
+  if(publicationMedia?.approvalStatus==="pending"){
+    statements.push(db.prepare("UPDATE media_assets SET approval_status='approved',orphaned_at=NULL WHERE id=? AND approval_status='pending' AND media_status='active'").bind(publicationMedia.id));
+    statements.push(db.prepare("INSERT INTO audit_logs (actor_user_id,action,entity_type,entity_id,metadata) VALUES (?,'media.approved_via_content','media',?,?)").bind(account.id,String(publicationMedia.id),JSON.stringify({contentId:id,moderationAction:action})));
+  }
   await db.batch(statements);
   if (row.owner_user_id) {
     const labels: Record<string, [string, string]> = {
