@@ -294,6 +294,93 @@ export async function createContent(account: LocalAccount, raw: Partial<ContentI
   return { id: contentId, entityId, slug, status: "draft", moderation_state:"draft", version: 1, primaryMediaId:media.id, primaryMediaAltText:media.altText, primaryMediaState:media.state, media:await editorMedia(db,contentId,media) };
 }
 
+/**
+ * Internal, admin-only write path used by the deterministic demo-data generator.
+ * It deliberately reuses the canonical type writers and rich-text/URL validators,
+ * while skipping the end-user rate limit and draft workflow for a batch that is
+ * already explicitly marked as synthetic.
+ */
+export async function createPublishedDemoContent(
+  account: LocalAccount,
+  raw: ContentInput,
+  ids: { contentId: number; entityId: number; mediaId: number },
+  publishedSnapshot: string,
+) {
+  if (!isAdmin(account)) throw new PlatformError(403, "Doar administratorii pot genera date demonstrative.");
+  if (!contentTypes.includes(raw.type)) throw new PlatformError(400, "Tip de conținut neacceptat.");
+  const title = cleanText(raw.title, 240, raw.type !== "business");
+  const slug = await uniqueSlug(cleanText(raw.slug, 120), title);
+  const excerpt = richValue(raw.excerpt, "Rezumat", 6_000);
+  const body = postTypes.has(raw.type) ? richValue(raw.body, "Conținut", 30_000, true) : raw.body;
+  const input = { ...raw, title, slug, excerpt, body, primaryMediaId: ids.mediaId, primaryMediaState: "selected" as const };
+  if (raw.type === "business") validateBusinessPublicationInput(input);
+  const media = await normalizeMediaSelection(account, input);
+  const businessId = numberOrNull(input.businessId);
+  const db = getRuntimeDb();
+  const statements: D1PreparedStatement[] = [
+    db.prepare("INSERT INTO content_records (id,type,entity_id,title,slug,excerpt,seo_title,seo_description,primary_media_id,primary_media_alt_text,primary_media_state,published_media_id,published_media_alt_text,published_media_state,owner_user_id,business_id,status,moderation_state,visibility,is_demo,created_by,last_edited_by,published_by,published_at,published_snapshot,version) VALUES (?,?,?,?,?,?,?,?,?,?,'selected',?,?,'selected',?,?,'published','approved','public',1,?,?,?,CURRENT_TIMESTAMP,?,1)")
+      .bind(ids.contentId,input.type,ids.entityId,title,slug,excerpt,cleanText(input.seoTitle,180)||null,cleanText(input.seoDescription,300)||null,media.id,media.altText||null,media.id,media.altText||null,account.id,businessId,account.id,account.id,account.id,publishedSnapshot),
+    typeInsert(db,input,ids.entityId,ids.contentId,slug,account),
+    demoPublishTypeStatement(db,input.type,ids.entityId,ids.mediaId,account.id),
+    db.prepare("UPDATE media_assets SET content_id=?,business_id=COALESCE(business_id,?),alt_text=?,approval_status='approved',media_status='active',orphaned_at=NULL WHERE id=?").bind(ids.contentId,businessId,media.altText,ids.mediaId),
+    db.prepare("INSERT INTO content_revisions (entity_type,entity_id,revision_number,snapshot,created_by,moderation_status,moderator_id,moderator_note) VALUES ('content',?,1,?,?,'approved',?,'Generat automat ca date demonstrative')").bind(ids.contentId,publishedSnapshot,account.id,account.id),
+    db.prepare("INSERT INTO moderation_records (submission_id,entity_type,entity_id,previous_state,new_state,moderator_id,action,note) VALUES (0,'content',?,'draft','published',?,'demo_generate','Conținut demonstrativ generat și publicat de administrator')").bind(ids.contentId,String(account.id)),
+    db.prepare("INSERT INTO audit_logs (actor_user_id,action,entity_type,entity_id,metadata) VALUES (?,'demo_content.created','content',?,?)").bind(account.id,String(ids.contentId),JSON.stringify({type:input.type,mediaId:ids.mediaId})),
+  ];
+  if(input.type==="business")for(const [weekday,opens,closes,closed] of demoBusinessHours())statements.push(db.prepare("INSERT INTO business_hours (business_id,weekday,opens_at,closes_at,closed) VALUES (?,?,?,?,?)").bind(ids.entityId,weekday,opens,closes,closed));
+  const results = await db.batch(statements);
+  if (Number(results[0]?.meta?.changes??0)!==1) throw new PlatformError(409,"Înregistrarea demonstrativă nu a putut fi creată.","demo_create_conflict");
+  return { contentId:ids.contentId,entityId:ids.entityId,mediaId:ids.mediaId,slug };
+}
+
+export async function refreshPublishedDemoContent(
+  account: LocalAccount,
+  raw: ContentInput,
+  ids: { contentId: number; entityId: number; mediaId: number; version: number },
+  publishedSnapshot: string,
+) {
+  if (!isAdmin(account)) throw new PlatformError(403, "Doar administratorii pot actualiza date demonstrative.");
+  const db = getRuntimeDb();
+  const current = await db.prepare("SELECT type,entity_id,version,is_demo,deleted_at FROM content_records WHERE id=?").bind(ids.contentId).first<{type:ContentType;entity_id:number;version:number;is_demo:number;deleted_at:string|null}>();
+  if (!current || current.is_demo !== 1 || current.type !== raw.type || current.entity_id !== ids.entityId || current.deleted_at) throw new PlatformError(409,"Înregistrarea nu mai corespunde manifestului demonstrativ.","demo_ownership_mismatch");
+  if (current.version !== ids.version) throw staleContentVersion();
+  const title=cleanText(raw.title,240,raw.type!=="business");
+  const slug=await uniqueSlug(cleanText(raw.slug,120),title,ids.contentId);
+  const excerpt=richValue(raw.excerpt,"Rezumat",6_000);
+  const body=postTypes.has(raw.type)?richValue(raw.body,"Conținut",30_000,true):raw.body;
+  const input={...raw,title,slug,excerpt,body,primaryMediaId:ids.mediaId,primaryMediaState:"selected" as const};
+  if(raw.type==="business")validateBusinessPublicationInput(input);
+  const media=await normalizeMediaSelection(account,input);
+  const businessId=numberOrNull(input.businessId);
+  const mutationId=crypto.randomUUID();
+  const nextRevision=await db.prepare("SELECT COALESCE(MAX(revision_number),0)+1 next FROM content_revisions WHERE entity_type='content' AND entity_id=?").bind(ids.contentId).first<{next:number}>();
+  const mutation={contentId:ids.contentId,mutationId};
+  const statements:D1PreparedStatement[]=[
+    db.prepare("UPDATE content_records SET title=?,slug=?,excerpt=?,seo_title=?,seo_description=?,business_id=?,primary_media_id=?,primary_media_alt_text=?,primary_media_state='selected',published_media_id=?,published_media_alt_text=?,published_media_state='selected',status='published',moderation_state='approved',visibility='public',published_by=?,published_at=COALESCE(published_at,CURRENT_TIMESTAMP),published_snapshot=?,last_edited_by=?,last_mutation_id=?,updated_at=CURRENT_TIMESTAMP,version=version+1 WHERE id=? AND version=? AND is_demo=1 AND deleted_at IS NULL")
+      .bind(title,slug,excerpt,cleanText(input.seoTitle,180)||null,cleanText(input.seoDescription,300)||null,businessId,media.id,media.altText||null,media.id,media.altText||null,account.id,publishedSnapshot,account.id,mutationId,ids.contentId,ids.version),
+    typeUpdate(db,input,ids.entityId,title,account,mutation),
+    typeSlugUpdate(db,input.type,ids.entityId,slug,mutation),
+    demoPublishTypeStatement(db,input.type,ids.entityId,ids.mediaId,account.id,mutation),
+    db.prepare("UPDATE media_assets SET content_id=?,business_id=COALESCE(business_id,?),alt_text=?,approval_status='approved',media_status='active',orphaned_at=NULL WHERE id=? AND EXISTS (SELECT 1 FROM content_records WHERE id=? AND last_mutation_id=?)").bind(ids.contentId,businessId,media.altText,ids.mediaId,ids.contentId,mutationId),
+    db.prepare("INSERT INTO content_revisions (entity_type,entity_id,revision_number,snapshot,created_by,moderation_status,moderator_id,moderator_note) SELECT 'content',?,?,?,?, 'approved',?,'Reîmprospătat automat din manifestul demonstrativ' WHERE EXISTS (SELECT 1 FROM content_records WHERE id=? AND last_mutation_id=?)").bind(ids.contentId,nextRevision?.next??ids.version+1,publishedSnapshot,account.id,account.id,ids.contentId,mutationId),
+    db.prepare("INSERT INTO audit_logs (actor_user_id,action,entity_type,entity_id,metadata) SELECT ?,'demo_content.refreshed','content',?,? WHERE EXISTS (SELECT 1 FROM content_records WHERE id=? AND last_mutation_id=?)").bind(account.id,String(ids.contentId),JSON.stringify({type:input.type,fromVersion:ids.version,toVersion:ids.version+1}),ids.contentId,mutationId),
+  ];
+  const results=await db.batch(statements);
+  if(Number(results[0]?.meta?.changes??0)!==1)throw staleContentVersion();
+  return {contentId:ids.contentId,entityId:ids.entityId,mediaId:ids.mediaId,slug,version:ids.version+1};
+}
+
+function demoPublishTypeStatement(db:D1Database,type:ContentType,entityId:number,mediaId:number,actorId:number,mutation?:{contentId:number;mutationId:string}){
+  const guard=mutation?" AND EXISTS (SELECT 1 FROM content_records WHERE id=? AND last_mutation_id=?)":"";
+  const values=mutation?[mutation.contentId,mutation.mutationId]:[];
+  if(type==="business")return db.prepare(`UPDATE businesses SET status='published',moderation_status='approved',verification_status='verified',verified=1,visibility='public',is_demo=1,verified_at=CURRENT_TIMESTAMP,verified_by=?,primary_image_id=? WHERE id=?${guard}`).bind(actorId,mediaId,entityId,...values);
+  const tables:Partial<Record<ContentType,string>>={event:"events",offer:"offers",job:"jobs",restaurant:"restaurants",daily_menu:"daily_menus",place:"places"};
+  const table=tables[type];
+  return table?db.prepare(`UPDATE ${table} SET status='published' WHERE id=?${guard}`).bind(entityId,...values):db.prepare("SELECT 1");
+}
+
+function demoBusinessHours():Array<[number,string|null,string|null,number]>{return [[0,"09:00","17:00",0],[1,"09:00","17:00",0],[2,"09:00","17:00",0],[3,"09:00","17:00",0],[4,"09:00","17:00",0],[5,null,null,1],[6,null,null,1]];}
+
 export async function updateContent(account: LocalAccount, id: number, raw: Partial<ContentInput> & { version?: number }) {
   const db = getRuntimeDb();
   const row = await db.prepare("SELECT * FROM content_records WHERE id=? AND deleted_at IS NULL").bind(id).first<ContentRow>();

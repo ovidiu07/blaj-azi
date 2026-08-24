@@ -42,6 +42,7 @@ const migrationNames = [
   "0007_curly_mandrill",
   "0008_theme_site",
   "0009_content_primary_media",
+  "0010_demo_data_batches",
 ];
 
 const sqlite = new DatabaseSync(":memory:");

@@ -65,6 +65,9 @@ test("mutation endpoints authenticate, authorize, and reject cross-site writes",
     "app/api/admin/reports/route.ts",
     "app/api/admin/promotions/route.ts",
     "app/api/admin/site-content/[key]/route.ts",
+    "app/api/admin/demo-data/route.ts",
+    "app/api/admin/demo-data/generate/route.ts",
+    "app/api/admin/demo-data/delete-preview/route.ts",
     "app/api/businesses/[id]/hours/route.ts",
     "app/api/businesses/[id]/team/route.ts",
     "app/api/media/route.ts",
@@ -106,7 +109,7 @@ test("content lifecycle preserves public revisions and blocks ownership escalati
   const publicData = await read("app/server/public-data.ts");
   assert.match(publicData, /status='published'.*visibility='public'.*deleted_at IS NULL/);
   assert.match(publicData, /c\.is_demo=0/);
-  assert.match(publicData, /e\.ends_at.*e\.starts_at.*bucharestDate/s);
+  assert.match(publicData, /bucharestDate.*e\.ends_at.*e\.starts_at/s);
   assert.match(publicData, /date\(o\.ends_at\).*date\(j\.deadline\)/s);
   assert.doesNotMatch(publicData, /pending_review'\s+AND\s+c\.visibility='public/);
   const submissions = await read("app/api/submissions/route.ts");

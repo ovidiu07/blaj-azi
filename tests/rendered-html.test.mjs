@@ -21,8 +21,7 @@ test("server-renders the Blaj Azi homepage with Romanian metadata", async () => 
   assert.match(html, /<html lang="ro">/i);
   assert.match(html, /<title>Blaj Azi — Ghidul local al Blajului<\/title>/i);
   assert.match(html, /Tot ce contează în Blaj/);
-  assert.match(html, /Conținut demonstrativ/);
-  assert.match(html, /Wikimedia Commons/);
+  assert.doesNotMatch(html, /Conținut demonstrativ/, "fallback-ul fără D1 nu trebuie să publice exemple demo");
   assert.doesNotMatch(html, /codex-preview|Your site is taking shape|react-loading-skeleton/i);
 });
 
@@ -67,7 +66,7 @@ test("renders first-party auth pages and protects account and admin routes", asy
 });
 
 test("keeps representative public routes renderable", async () => {
-  for (const path of ["/descopera-blaj", "/descopera-blaj/campia-libertatii", "/evenimente", "/afaceri-si-servicii", "/oferte-locale", "/unde-mancam", "/locuri-de-munca", "/povesti-locale", "/informatii-utile", "/promovare", "/adauga", "/adauga-o-afacere"]) {
+  for (const path of ["/descopera-blaj", "/evenimente", "/afaceri-si-servicii", "/oferte-locale", "/unde-mancam", "/locuri-de-munca", "/povesti-locale", "/informatii-utile", "/promovare", "/adauga", "/adauga-o-afacere"]) {
     const response = await render(path);
     assert.equal(response.status, 200, path);
     const html = await response.text();

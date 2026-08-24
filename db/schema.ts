@@ -356,6 +356,56 @@ export const roleHistory = sqliteTable(
 
 export const platformSettings = sqliteTable("platform_settings", { key: text("key").primaryKey(), value: text("value").notNull(), updatedBy: integer("updated_by"), updatedAt: text("updated_at").notNull().default(now) });
 
+export const demoDataBatches = sqliteTable(
+  "demo_data_batches",
+  {
+    id: text("id").primaryKey(),
+    status: text("status").notNull().default("creating"),
+    generatorVersion: text("generator_version").notNull(),
+    createdBy: integer("created_by").notNull(),
+    createdAt: text("created_at").notNull().default(now),
+    updatedAt: text("updated_at").notNull().default(now),
+    generatedAt: text("generated_at"),
+    deletedAt: text("deleted_at"),
+    errorSummary: text("error_summary"),
+    contentCount: integer("content_count").notNull().default(0),
+    mediaCount: integer("media_count").notNull().default(0),
+    operationToken: text("operation_token"),
+    operationStartedAt: text("operation_started_at"),
+    cleanupToken: text("cleanup_token"),
+    cleanupPreviewedAt: text("cleanup_previewed_at"),
+  },
+  (table) => [
+    uniqueIndex("demo_data_batches_generator_version_unique").on(table.generatorVersion),
+    index("idx_demo_data_batches_status_updated").on(table.status, table.updatedAt),
+  ],
+);
+
+export const demoDataItems = sqliteTable(
+  "demo_data_items",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    batchId: text("batch_id").notNull(),
+    seedKey: text("seed_key").notNull(),
+    contentId: integer("content_id"),
+    entityId: integer("entity_id"),
+    mediaAssetId: integer("media_asset_id"),
+    r2Key: text("r2_key").notNull(),
+    contentType: text("content_type").notNull(),
+    category: text("category").notNull(),
+    fixtureHash: text("fixture_hash").notNull(),
+    cleanupStatus: text("cleanup_status").notNull().default("active"),
+    createdAt: text("created_at").notNull().default(now),
+    updatedAt: text("updated_at").notNull().default(now),
+  },
+  (table) => [
+    uniqueIndex("demo_data_items_seed_key_unique").on(table.seedKey),
+    uniqueIndex("demo_data_items_batch_content_unique").on(table.batchId, table.contentId),
+    index("idx_demo_data_items_batch_status").on(table.batchId, table.cleanupStatus),
+    index("idx_demo_data_items_type_category").on(table.contentType, table.category),
+  ],
+);
+
 export const siteContentEntries = sqliteTable(
   "site_content_entries",
   {

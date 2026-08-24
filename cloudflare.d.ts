@@ -14,9 +14,13 @@ interface D1Database {
     batch<T = Record<string, unknown>>(statements: D1PreparedStatement[]): Promise<D1Result<T>[]>;
   }
 interface R2ObjectBody { body: ReadableStream; }
+interface R2Object { key: string; }
+interface R2Objects { objects: R2Object[]; truncated: boolean; cursor?: string; }
 interface R2Bucket {
     put(key: string, value: ReadableStream | ArrayBuffer | ArrayBufferView, options?: unknown): Promise<unknown>;
     get(key: string): Promise<R2ObjectBody | null>;
+    head(key: string): Promise<R2Object | null>;
+    list(options?: { prefix?: string; cursor?: string; limit?: number }): Promise<R2Objects>;
     delete(key: string): Promise<void>;
 }
 interface ImagesBinding {
@@ -35,6 +39,7 @@ declare module "cloudflare:workers" {
     ADMIN_EMAIL?: string;
     ASSETS?: Fetcher;
     IMAGES?: ImagesBinding;
+    DEMO_DATA_ADMIN_ENABLED?: string;
     [key: string]: unknown;
   };
 }

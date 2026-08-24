@@ -35,6 +35,10 @@ promovează niciodată o înregistrare publică.
 Conținutul public poate fi citit anonim. Rutele `/cont/*` cer autentificare, iar
 operațiile de administrare verifică rolul și starea utilizatorului pe server.
 
+Generatorul administrativ, idempotency, vizibilitatea implicit ascunsă și
+procedura de curățare a loturilor sintetice sunt documentate în
+[`docs/demo-data.md`](docs/demo-data.md). Capabilitatea este oprită implicit.
+
 ## Stocare
 
 - `DB` — binding Cloudflare D1 pentru date structurate;
