@@ -31,19 +31,20 @@ test("legacy plain text is preserved without treating supplied HTML as executabl
   assert.match(html, /&lt;script&gt;/);
 });
 
-test("theme defaults establish the civic discovery identity and meet publish contrast", () => {
+test("theme defaults establish the Black Ledger identity and meet publish contrast", () => {
   const defaults = cms.defaultSiteContent("theme.site");
   assert.deepEqual(defaults, theme.defaultTheme);
   assert.deepEqual(theme.validateTheme(defaults), defaults);
   assert.ok(theme.themeContrastChecks(defaults).every(item => item.pass));
-  assert.equal(theme.themeCssProperties(defaults)["--color-accent"], "#b84b3b");
-  assert.equal(theme.homeThemeCssProperties(defaults)["--home-hero-background"], "#eaf1ee");
-  assert.equal(theme.homeThemeCssProperties(defaults)["--home-jobs-background"], "#eaf1ee");
+  assert.equal(theme.themeCssProperties(defaults)["--color-accent"], "#a9bdc9");
+  assert.equal(theme.themeCssProperties(defaults)["--color-action"], "#f4f6f7");
+  assert.equal(theme.homeThemeCssProperties(defaults)["--home-hero-background"], "#050607");
+  assert.equal(theme.homeThemeCssProperties(defaults)["--home-jobs-background"], "#080a0c");
 });
 
 test("theme drafts accept valid colors while publish validation rejects weak contrast", () => {
-  const draft = { ...theme.defaultTheme, text:"#faf8f4" };
-  assert.equal(cms.validateSiteContent("theme.site",draft).text,"#faf8f4");
+  const draft = { ...theme.defaultTheme, text:"#050607" };
+  assert.equal(cms.validateSiteContent("theme.site",draft).text,"#050607");
   assert.throws(() => theme.validateTheme(draft), /Contrast insuficient/);
   assert.throws(() => cms.validateSiteContent("theme.site",{...draft,accent:"red"}), /HEX completă/);
   assert.throws(() => cms.validateSiteContent("theme.site",{...draft,headingFont:"comic-sans"}), /valoare neacceptată/);

@@ -39,7 +39,7 @@ export async function generateMetadata(): Promise<Metadata> {
     openGraph: { title: String(seo.openGraphTitle), description: String(seo.openGraphDescription), locale: "ro_RO", type: "website", url: "/", images: [{ url: image, width: 1200, height: 630, alt: socialImage.alt }] },
     twitter: { card: seo.twitterCard === "summary" ? "summary" : "summary_large_image", images: [image] },
     icons: { icon: "/favicon.svg", shortcut: "/favicon.svg" },
-    themeColor: String(metadataContent["theme.site"].primaryDark),
+    themeColor: String(metadataContent["theme.site"].canvas),
   };
 }
 

@@ -2,14 +2,14 @@ export const themeFontOptions = ["manrope", "inter", "source-serif-4", "system-s
 export type ThemeFont = typeof themeFontOptions[number];
 
 export const defaultTheme = {
-  canvas: "#faf8f4", surface: "#ffffff", primary: "#173f4b", primaryDark: "#0f3039",
-  accent: "#b84b3b", accentDark: "#99382d", accentSoft: "#f3e3de", highlight: "#e2b85b",
-  text: "#173f4b", textMuted: "#52666c", border: "#d8dfde", focus: "#b84b3b",
-  headerBackground: "#ffffff", buttonText: "#ffffff",
+  canvas: "#050607", surface: "#0d0f12", primary: "#f4f6f7", primaryDark: "#dfe3e6",
+  accent: "#a9bdc9", accentDark: "#c7d2d9", accentSoft: "#181d22", highlight: "#d7dce1",
+  text: "#f5f7f8", textMuted: "#b8c0c8", border: "#3b4249", focus: "#ffffff",
+  headerBackground: "#080a0c", buttonText: "#08090a",
   headingFont: "manrope", bodyFont: "inter", interfaceFont: "manrope",
-  homeHeroBackground: "#eaf1ee", homeHeroText: "#14201e", homeHeroMuted: "#52615e",
-  homeDarkSection: "#102622", homeDarkSectionText: "#f8fbf9", homeJobsBackground: "#eaf1ee", homeCardBackground: "#ffffff",
-  homeAlternateBackground: "#eaf1ee", homeCtaBackground: "#102622", homeCtaText: "#f8fbf9",
+  homeHeroBackground: "#050607", homeHeroText: "#f5f7f8", homeHeroMuted: "#b8c0c8",
+  homeDarkSection: "#0d0f12", homeDarkSectionText: "#f5f7f8", homeJobsBackground: "#080a0c", homeCardBackground: "#12161a",
+  homeAlternateBackground: "#f6f7f5", homeCtaBackground: "#f6f7f5", homeCtaText: "#090b0d",
 } as const;
 
 export type ThemeSettings = { -readonly [K in keyof typeof defaultTheme]: string };
@@ -28,7 +28,7 @@ export function normalizeTheme(value: unknown): ThemeSettings {
 
 export function validateTheme(value: unknown): ThemeSettings {
   const theme = normalizeTheme(value);
-  for (const key of themeColorKeys) if (!/^#[0-9a-f]{6}$/i.test(theme[key])) throw new Error(`${key}: folosește o culoare HEX completă, de forma #173f4b.`);
+  for (const key of themeColorKeys) if (!/^#[0-9a-f]{6}$/i.test(theme[key])) throw new Error(`${key}: folosește o culoare HEX completă, de forma #050607.`);
   for (const key of ["headingFont", "bodyFont", "interfaceFont"] as const) if (!themeFontOptions.includes(theme[key] as ThemeFont)) throw new Error(`${key}: font neacceptat.`);
   const failures = themeContrastChecks(theme).filter(check => !check.pass);
   if (failures.length) throw new Error(`Contrast insuficient: ${failures.map(item => `${item.label} ${item.ratio.toFixed(2)}:1`).join(", ")}. Pragul este 4.5:1.`);
@@ -77,10 +77,21 @@ const fontStacks: Record<ThemeFont, string> = {
 export function themeCssProperties(value: unknown): Record<string, string> {
   const theme = normalizeTheme(value);
   return {
-    "--color-canvas":theme.canvas, "--color-surface":theme.surface, "--color-primary":theme.primary,
+    "--color-canvas":theme.canvas, "--color-canvas-alt":"#080a0c",
+    "--color-surface":theme.surface, "--color-surface-1":theme.surface, "--color-surface-2":"#12161a",
+    "--color-surface-3":theme.accentSoft, "--color-surface-hover":"#1d2329",
+    "--color-surface-inverse":"#f6f7f5", "--color-surface-inverse-muted":"#e9ebe9", "--color-surface-inverse-hover":"#ffffff",
+    "--color-primary":theme.primary,
     "--color-primary-dark":theme.primaryDark, "--color-accent":theme.accent, "--color-accent-dark":theme.accentDark,
     "--color-accent-soft":theme.accentSoft, "--color-highlight":theme.highlight, "--color-text":theme.text,
-    "--color-text-muted":theme.textMuted, "--color-border":theme.border, "--color-focus":theme.focus,
+    "--color-text-primary":theme.text, "--color-text-secondary":theme.textMuted, "--color-text-tertiary":"#89929c", "--color-text-disabled":"#69717a",
+    "--color-text-inverse":"#090b0d", "--color-text-inverse-secondary":"#4e565e", "--color-text-inverse-tertiary":"#68717a",
+    "--color-text-muted":theme.textMuted, "--color-border":theme.border, "--color-focus":theme.focus, "--color-focus-outer":"rgba(169,189,201,.62)",
+    "--color-border-subtle":"rgba(255,255,255,.10)", "--color-border-default":"rgba(255,255,255,.17)", "--color-border-strong":"rgba(255,255,255,.28)", "--color-border-inverse":"#d2d6d8",
+    "--color-graphite":"#2a3036", "--color-metal":"#9ba5ae", "--color-metal-bright":theme.highlight,
+    "--color-steel-accent":theme.accent, "--color-steel-accent-hover":theme.accentDark,
+    "--color-action":theme.primary, "--color-action-hover":"#ffffff", "--color-action-active":theme.primaryDark, "--color-action-foreground":theme.buttonText,
+    "--color-success":"#71d39b", "--color-warning":"#e0b866", "--color-danger":"#ff7d82", "--color-info":"#7db4ea",
     "--color-header-background":theme.headerBackground, "--color-button-text":theme.buttonText,
     "--theme-font-heading":fontStacks[theme.headingFont as ThemeFont], "--theme-font-body":fontStacks[theme.bodyFont as ThemeFont],
     "--theme-font-interface":fontStacks[theme.interfaceFont as ThemeFont],

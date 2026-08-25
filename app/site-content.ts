@@ -81,10 +81,10 @@ const informativePage = (key: string, route: string, label: string, title: strin
 
 export const siteContentDefinitions: readonly SiteContentDefinition[] = [
   {
-    key: "theme.site", scope: "theme", route: "*", label: "Aspect și identitate vizuală", group: "Aspect și identitate vizuală", schemaVersion: 1,
+    key: "theme.site", scope: "theme", route: "*", label: "Aspect și identitate vizuală", group: "Aspect și identitate vizuală", schemaVersion: 2,
     defaults: { ...defaultTheme },
     fields: [
-      {path:"canvas",label:"Fundal general",kind:"color",group:"Culori globale"},{path:"surface",label:"Suprafețe și carduri",kind:"color",group:"Culori globale"},{path:"primary",label:"Culoare principală",kind:"color",group:"Culori globale"},{path:"primaryDark",label:"Culoare principală închisă",kind:"color",group:"Culori globale"},{path:"accent",label:"Accent și acțiuni",kind:"color",group:"Culori globale"},{path:"accentDark",label:"Accent la interacțiune",kind:"color",group:"Culori globale"},{path:"accentSoft",label:"Accent discret",kind:"color",group:"Culori globale"},{path:"highlight",label:"Evidențiere",kind:"color",group:"Culori globale"},{path:"text",label:"Text principal",kind:"color",group:"Culori globale"},{path:"textMuted",label:"Text secundar",kind:"color",group:"Culori globale"},{path:"border",label:"Contururi",kind:"color",group:"Culori globale"},{path:"focus",label:"Indicator de focalizare",kind:"color",group:"Culori globale"},{path:"headerBackground",label:"Fundal antet",kind:"color",group:"Culori globale"},{path:"buttonText",label:"Text pe butoane",kind:"color",group:"Culori globale"},
+      {path:"canvas",label:"Pânză neagră",kind:"color",group:"Culori globale"},{path:"surface",label:"Suprafață ridicată",kind:"color",group:"Culori globale"},{path:"primary",label:"Acțiune principală",kind:"color",group:"Culori globale"},{path:"primaryDark",label:"Acțiune apăsată",kind:"color",group:"Culori globale"},{path:"accent",label:"Accent oțel",kind:"color",group:"Culori globale"},{path:"accentDark",label:"Accent oțel la interacțiune",kind:"color",group:"Culori globale"},{path:"accentSoft",label:"Suprafață grafit",kind:"color",group:"Culori globale"},{path:"highlight",label:"Metal luminos",kind:"color",group:"Culori globale"},{path:"text",label:"Text principal pe închis",kind:"color",group:"Culori globale"},{path:"textMuted",label:"Text secundar pe închis",kind:"color",group:"Culori globale"},{path:"border",label:"Contur solid",kind:"color",group:"Culori globale"},{path:"focus",label:"Indicator de focalizare",kind:"color",group:"Culori globale"},{path:"headerBackground",label:"Fundal antet",kind:"color",group:"Culori globale"},{path:"buttonText",label:"Text pe acțiunea principală",kind:"color",group:"Culori globale"},
       {path:"headingFont",label:"Titluri",kind:"font",options:themeFontOptions,group:"Fonturi globale"},{path:"bodyFont",label:"Text curent",kind:"font",options:themeFontOptions,group:"Fonturi globale"},{path:"interfaceFont",label:"Interfață și butoane",kind:"font",options:themeFontOptions,group:"Fonturi globale"},
       {path:"homeHeroBackground",label:"Fundal erou",kind:"color",group:"Pagina principală"},{path:"homeHeroText",label:"Text erou",kind:"color",group:"Pagina principală"},{path:"homeHeroMuted",label:"Text secundar erou",kind:"color",group:"Pagina principală"},{path:"homeDarkSection",label:"Fundal secțiune editorială",kind:"color",group:"Pagina principală"},{path:"homeDarkSectionText",label:"Text secțiuni închise",kind:"color",group:"Pagina principală"},{path:"homeJobsBackground",label:"Fundal secțiune joburi",kind:"color",group:"Pagina principală"},{path:"homeCardBackground",label:"Fundal carduri",kind:"color",group:"Pagina principală"},{path:"homeAlternateBackground",label:"Fundal alternativ",kind:"color",group:"Pagina principală"},{path:"homeCtaBackground",label:"Fundal îndemn final",kind:"color",group:"Pagina principală"},{path:"homeCtaText",label:"Text îndemn final",kind:"color",group:"Pagina principală"},
     ],
@@ -289,6 +289,16 @@ export function mergeWithSiteDefaults(key: string, value: unknown): Record<strin
 }
 
 function migrateKnownDefaults(key: string, value: Record<string, unknown>): Record<string, unknown> {
+  if (key === "theme.site") {
+    const legacy: Record<string, readonly string[]> = {
+      canvas:["#faf8f4"],surface:["#ffffff"],primary:["#173f4b"],primaryDark:["#0f3039"],accent:["#b84b3b"],accentDark:["#99382d"],accentSoft:["#f3e3de"],highlight:["#e2b85b"],
+      text:["#1e2426","#173f4b"],textMuted:["#5c666a","#52666c"],border:["#dfe3e2","#d8dfde"],focus:["#b84b3b"],headerBackground:["#f6f0e4","#ffffff"],buttonText:["#ffffff"],
+      headingFont:["source-serif-4"],interfaceFont:["inter"],
+      homeHeroBackground:["#0f3039","#eaf1ee"],homeHeroText:["#ffffff","#14201e"],homeHeroMuted:["#e9f0f1","#52615e"],homeDarkSection:["#ffffff","#102622"],homeDarkSectionText:["#1e2426","#f8fbf9"],
+      homeJobsBackground:["#e8f1f3","#eaf1ee"],homeCardBackground:["#ffffff"],homeAlternateBackground:["#e8f1f3","#eaf1ee"],homeCtaBackground:["#f3e3de","#102622"],homeCtaText:["#1e2426","#f8fbf9"],
+    };
+    return Object.fromEntries(Object.entries(value).map(([field, current]) => [field, legacy[field]?.includes(String(current)) ? defaultTheme[field as keyof typeof defaultTheme] : current]));
+  }
   if (key !== "home" || value.titleLine !== "Tot ce contează în Blaj,") return value;
   return { ...value, titleLine: "Tot ce contează," };
 }

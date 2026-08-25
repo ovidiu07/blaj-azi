@@ -73,14 +73,14 @@ test("publishing enforces approved active media while drafts may reference pendi
 
 test("theme drafts may be explored privately but weak contrast cannot be published or restored", async () => {
   const db=await database();
-  const weak={...cms.defaultSiteContent("theme.site"),text:"#faf8f4"};
+  const weak={...cms.defaultSiteContent("theme.site"),text:"#050607"};
   const saved=await service.saveSiteContentDraft(admin,"theme.site",weak,1,db);
   assert.equal(saved.version,2);
-  assert.equal((await service.loadPublishedSiteContent("theme.site",db)).text,"#1e2426");
+  assert.equal((await service.loadPublishedSiteContent("theme.site",db)).text,"#f5f7f8");
   await assert.rejects(()=>service.siteContentAction(admin,"theme.site","publish",2,undefined,db),/Contrast insuficient/);
   const draft=await service.loadAdminSiteContent(admin,"theme.site",db);
-  assert.equal(draft.draft.text,"#faf8f4");
-  assert.equal(draft.published.text,"#1e2426");
+  assert.equal(draft.draft.text,"#050607");
+  assert.equal(draft.published.text,"#f5f7f8");
 });
 
 test("homepage accepts intentional blanks, optional links, cleared media, and upgrades legacy records by presence", async () => {

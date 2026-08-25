@@ -57,21 +57,35 @@ export function RichTextEditor({ name, label, description, defaultValue = emptyR
   const id = useId();
   const editor = useRef<HTMLDivElement>(null);
   const [richDocument, setRichDocument] = useState(() => normalizeRichText(defaultValue));
+  const [activeFormats, setActiveFormats] = useState<Set<string>>(() => new Set());
   const initialHtml = useRef(richTextToEditorHtml(richDocument));
   const descriptionId = `${id}-description`;
   const errorId = `${id}-error`;
   const characterCount = richTextToPlainText(richDocument).length;
   useEffect(() => { if (editor.current) editor.current.innerHTML = initialHtml.current; }, []);
+  useEffect(() => {
+    function refreshFromSelection() {
+      if (editor.current) setActiveFormats(readActiveFormats(editor.current));
+    }
+    document.addEventListener("selectionchange", refreshFromSelection);
+    return () => document.removeEventListener("selectionchange", refreshFromSelection);
+  }, []);
+
+  function refreshFormats() {
+    if (editor.current) setActiveFormats(readActiveFormats(editor.current));
+  }
 
   function update() {
     if (!editor.current) return;
     setRichDocument(documentFromEditor(editor.current));
+    refreshFormats();
   }
 
   function command(name: string, value?: string) {
     editor.current?.focus();
     window.document.execCommand(name, false, value);
     update();
+    window.requestAnimationFrame(refreshFormats);
   }
 
   function addLink() {
@@ -89,15 +103,15 @@ export function RichTextEditor({ name, label, description, defaultValue = emptyR
     <p id={descriptionId} className="field-help">{description}</p>
     <div className="rte-shell">
       <div className="rte-toolbar" role="toolbar" aria-label={`Formatare pentru ${label}`}>
-        <ToolbarButton disabled={disabled} label="Aldin" icon={<Bold />} onClick={() => command("bold")} />
-        <ToolbarButton disabled={disabled} label="Cursiv" icon={<Italic />} onClick={() => command("italic")} />
-        <ToolbarButton disabled={disabled} label="Subliniat" icon={<Underline />} onClick={() => command("underline")} />
-        <ToolbarButton disabled={disabled} label="Titlu nivel 2" text="H2" onClick={() => command("formatBlock", "h2")} />
-        <ToolbarButton disabled={disabled} label="Titlu nivel 3" text="H3" onClick={() => command("formatBlock", "h3")} />
-        <ToolbarButton disabled={disabled} label="Listă cu marcatori" icon={<List />} onClick={() => command("insertUnorderedList")} />
-        <ToolbarButton disabled={disabled} label="Listă numerotată" icon={<ListOrdered />} onClick={() => command("insertOrderedList")} />
-        <ToolbarButton disabled={disabled} label="Citat" icon={<Quote />} onClick={() => command("formatBlock", "blockquote")} />
-        <ToolbarButton disabled={disabled} label="Adaugă legătură" icon={<LinkIcon />} onClick={addLink} />
+        <ToolbarButton disabled={disabled} label="Aldin" icon={<Bold />} pressed={activeFormats.has("bold")} onClick={() => command("bold")} />
+        <ToolbarButton disabled={disabled} label="Cursiv" icon={<Italic />} pressed={activeFormats.has("italic")} onClick={() => command("italic")} />
+        <ToolbarButton disabled={disabled} label="Subliniat" icon={<Underline />} pressed={activeFormats.has("underline")} onClick={() => command("underline")} />
+        <ToolbarButton disabled={disabled} label="Titlu nivel 2" text="H2" pressed={activeFormats.has("heading2")} onClick={() => command("formatBlock", "h2")} />
+        <ToolbarButton disabled={disabled} label="Titlu nivel 3" text="H3" pressed={activeFormats.has("heading3")} onClick={() => command("formatBlock", "h3")} />
+        <ToolbarButton disabled={disabled} label="Listă cu marcatori" icon={<List />} pressed={activeFormats.has("bulletList")} onClick={() => command("insertUnorderedList")} />
+        <ToolbarButton disabled={disabled} label="Listă numerotată" icon={<ListOrdered />} pressed={activeFormats.has("orderedList")} onClick={() => command("insertOrderedList")} />
+        <ToolbarButton disabled={disabled} label="Citat" icon={<Quote />} pressed={activeFormats.has("blockquote")} onClick={() => command("formatBlock", "blockquote")} />
+        <ToolbarButton disabled={disabled} label="Adaugă legătură" icon={<LinkIcon />} pressed={activeFormats.has("link")} onClick={addLink} />
         <ToolbarButton disabled={disabled} label="Elimină legătura" icon={<RemoveFormatting />} onClick={() => command("unlink")} />
         <ToolbarButton disabled={disabled} label="Anulează" icon={<Undo2 />} onClick={() => command("undo")} />
         <ToolbarButton disabled={disabled} label="Refă" icon={<Redo2 />} onClick={() => command("redo")} />
@@ -108,6 +122,7 @@ export function RichTextEditor({ name, label, description, defaultValue = emptyR
         className="rte-editor"
         contentEditable={!disabled}
         role="textbox"
+        tabIndex={disabled ? -1 : 0}
         aria-multiline="true"
         aria-required={required}
         aria-labelledby={`${id}-label`}
@@ -116,6 +131,8 @@ export function RichTextEditor({ name, label, description, defaultValue = emptyR
         data-placeholder="Scrie aici…"
         onInput={update}
         onBlur={update}
+        onKeyUp={refreshFormats}
+        onMouseUp={refreshFormats}
         onPaste={event => {
           event.preventDefault();
           const text = event.clipboardData.getData("text/plain");
@@ -131,8 +148,31 @@ export function RichTextEditor({ name, label, description, defaultValue = emptyR
   </div>;
 }
 
-function ToolbarButton({ label, icon, text, onClick, disabled = false }: { label: string; icon?: React.ReactNode; text?: string; onClick: () => void; disabled?: boolean }) {
-  return <button type="button" disabled={disabled} title={label} aria-label={label} onMouseDown={event => event.preventDefault()} onClick={onClick}>{icon}{text && <span>{text}</span>}<span className="rte-button-label">{label}</span></button>;
+function ToolbarButton({ label, icon, text, onClick, disabled = false, pressed }: { label: string; icon?: React.ReactNode; text?: string; onClick: () => void; disabled?: boolean; pressed?: boolean }) {
+  return <button type="button" disabled={disabled} title={label} aria-label={label} aria-pressed={pressed} onMouseDown={event => event.preventDefault()} onClick={onClick}>{icon}{text && <span>{text}</span>}<span className="rte-button-label">{label}</span></button>;
+}
+
+function readActiveFormats(root: HTMLElement) {
+  const selection = window.getSelection();
+  const anchor = selection?.anchorNode;
+  if (!anchor || !root.contains(anchor)) return new Set<string>();
+  const active = new Set<string>();
+  const commands: Array<[string, string]> = [
+    ["bold", "bold"], ["italic", "italic"], ["underline", "underline"],
+    ["bulletList", "insertUnorderedList"], ["orderedList", "insertOrderedList"],
+  ];
+  for (const [format, command] of commands) {
+    try { if (document.queryCommandState(command)) active.add(format); } catch { /* unsupported command state */ }
+  }
+  try {
+    const block = String(document.queryCommandValue("formatBlock")).toLowerCase().replace(/[<>]/g, "");
+    if (block === "h2") active.add("heading2");
+    if (block === "h3") active.add("heading3");
+    if (block === "blockquote") active.add("blockquote");
+  } catch { /* unsupported block state */ }
+  const element = anchor.nodeType === Node.ELEMENT_NODE ? anchor as Element : anchor.parentElement;
+  if (element?.closest("a")) active.add("link");
+  return active;
 }
 
 function documentFromEditor(root: HTMLElement): RichTextDocument {
