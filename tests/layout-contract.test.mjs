@@ -11,7 +11,7 @@ const DB = {
         if (/FROM site_content_entries WHERE key=\?/i.test(sql)) {
           const key = bindings[0];
           return Object.hasOwn(entries, key)
-            ? { published_json: JSON.stringify(entries[key]), schema_version: key === "home" ? 3 : 1 }
+            ? { published_json: JSON.stringify(entries[key]), schema_version: key === "home" ? 4 : 1 }
             : null;
         }
         return null;

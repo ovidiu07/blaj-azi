@@ -36,7 +36,7 @@ test("theme defaults establish the civic discovery identity and meet publish con
   assert.deepEqual(defaults, theme.defaultTheme);
   assert.deepEqual(theme.validateTheme(defaults), defaults);
   assert.ok(theme.themeContrastChecks(defaults).every(item => item.pass));
-  assert.equal(theme.themeCssProperties(defaults)["--color-accent"], "#c44b32");
+  assert.equal(theme.themeCssProperties(defaults)["--color-accent"], "#b84b3b");
   assert.equal(theme.homeThemeCssProperties(defaults)["--home-hero-background"], "#eaf1ee");
   assert.equal(theme.homeThemeCssProperties(defaults)["--home-jobs-background"], "#eaf1ee");
 });

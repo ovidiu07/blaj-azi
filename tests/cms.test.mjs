@@ -119,6 +119,11 @@ test("homepage accepts intentional blanks, optional links, cleared media, and up
   assert.equal(loaded.restaurantFilters[0].value,"Toate");
   assert.equal(loaded.restaurantFilters[0].visible,true);
   assert.equal(loaded.restaurantFilters[0].deleted,false);
+
+  const priorDefault = { ...defaults, titleLine:"Tot ce contează în Blaj," };
+  assert.equal(cms.mergeWithSiteDefaults("home",priorDefault).titleLine,"Tot ce contează,");
+  assert.equal(cms.mergeWithSiteDefaults("home",{ ...priorDefault, titleLine:"Titlu personalizat" }).titleLine,"Titlu personalizat");
+  assert.equal(cms.mergeWithSiteDefaults("home",{ ...priorDefault, titleLine:"" }).titleLine,"");
 });
 
 test("homepage snapshots preserve blank, hidden, deleted, reordered, and cleared states through publish and revision restore", async () => {

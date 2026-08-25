@@ -11,7 +11,7 @@ const DB = {
       bind(...values) { bindings = values; return this; },
       async first() {
         if (/FROM site_content_entries WHERE key=\?/i.test(sql)) {
-          return bindings[0] === "home" ? { published_json: JSON.stringify(homeContent), schema_version: 3 } : null;
+          return bindings[0] === "home" ? { published_json: JSON.stringify(homeContent), schema_version: 4 } : null;
         }
         return null;
       },

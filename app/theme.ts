@@ -2,9 +2,9 @@ export const themeFontOptions = ["manrope", "inter", "source-serif-4", "system-s
 export type ThemeFont = typeof themeFontOptions[number];
 
 export const defaultTheme = {
-  canvas: "#f4f6f3", surface: "#ffffff", primary: "#0d5c50", primaryDark: "#08483f",
-  accent: "#c44b32", accentDark: "#b9442d", accentSoft: "#f9e5df", highlight: "#e6b94a",
-  text: "#14201e", textMuted: "#52615e", border: "#d9e2de", focus: "#0867d8",
+  canvas: "#faf8f4", surface: "#ffffff", primary: "#173f4b", primaryDark: "#0f3039",
+  accent: "#b84b3b", accentDark: "#99382d", accentSoft: "#f3e3de", highlight: "#e2b85b",
+  text: "#173f4b", textMuted: "#52666c", border: "#d8dfde", focus: "#b84b3b",
   headerBackground: "#ffffff", buttonText: "#ffffff",
   headingFont: "manrope", bodyFont: "inter", interfaceFont: "manrope",
   homeHeroBackground: "#eaf1ee", homeHeroText: "#14201e", homeHeroMuted: "#52615e",
@@ -41,6 +41,7 @@ export function themeContrastChecks(themeValue: unknown) {
     contrast("Text principal / fundal", theme.text, theme.canvas),
     contrast("Text secundar / fundal", theme.textMuted, theme.canvas),
     contrast("Text buton / culoare principală", theme.buttonText, theme.primary),
+    contrast("Text buton / accent", theme.buttonText, theme.accent),
     contrast("Text erou / fundal erou", theme.homeHeroText, theme.homeHeroBackground),
     contrast("Text secundar erou / fundal erou", theme.homeHeroMuted, theme.homeHeroBackground),
     contrast("Text secțiune închisă / fundal", theme.homeDarkSectionText, theme.homeDarkSection),

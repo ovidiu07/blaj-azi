@@ -90,11 +90,11 @@ export const siteContentDefinitions: readonly SiteContentDefinition[] = [
     ],
   },
   {
-    key: "home", scope: "page", route: "/", label: "Pagina principală", group: "Pagina principală", schemaVersion: 3,
+    key: "home", scope: "page", route: "/", label: "Pagina principală", group: "Pagina principală", schemaVersion: 4,
     defaults: {
       heroVisible: true,
       heroImage: image("/images/campia-libertatii.jpg", "Câmpia Libertății din Blaj", "Țetcu Mircea Rareș", "https://commons.wikimedia.org/", "CC BY-SA 4.0"),
-      kicker: "Ghidul comunității din Blaj", titleLine: "Tot ce contează în Blaj,", emphasizedTitleLine: "într-un singur loc.",
+      kicker: "Ghidul comunității din Blaj", titleLine: "Tot ce contează,", emphasizedTitleLine: "într-un singur loc.",
       intro: "Descoperă oameni, locuri și lucruri utile — aproape de tine, explicate simplu și actualizate responsabil.",
       heroTrust: "Informații publicate după verificare.",
       searchVisible: true,
@@ -285,7 +285,12 @@ function validateRichTextBlock(raw: unknown, label: string): RichTextBlock {
 export function mergeWithSiteDefaults(key: string, value: unknown): Record<string, unknown> {
   const defaults = defaultSiteContent(key);
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Conținutul trebuie să fie un obiect valid.");
-  return validateSiteContent(key, deepMerge(defaults, value as Record<string, unknown>));
+  return validateSiteContent(key, deepMerge(defaults, migrateKnownDefaults(key, value as Record<string, unknown>)));
+}
+
+function migrateKnownDefaults(key: string, value: Record<string, unknown>): Record<string, unknown> {
+  if (key !== "home" || value.titleLine !== "Tot ce contează în Blaj,") return value;
+  return { ...value, titleLine: "Tot ce contează," };
 }
 
 function deepMerge(defaults: Record<string, unknown>, value: Record<string, unknown>): Record<string, unknown> {
