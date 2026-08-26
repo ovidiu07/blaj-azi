@@ -11,7 +11,7 @@ const DB = {
       bind(...values) { bindings = values; return this; },
       async first() {
         if (/FROM site_content_entries WHERE key=\?/i.test(sql)) {
-          return bindings[0] === "home" ? { published_json: JSON.stringify(homeContent), schema_version: 4 } : null;
+          return bindings[0] === "home" ? { published_json: JSON.stringify(homeContent), schema_version: 5 } : null;
         }
         return null;
       },
@@ -84,6 +84,7 @@ test("homepage renders only complete visible repeatable links and complete actio
   };
   const html = await render();
   assert.match(html, /<h1>.*Titlu păstrat.*<\/h1>/s);
+  assert.doesNotMatch(html, /home-hero-signal/);
   assert.match(html, /href="\/evenimente"[^>]*>.*Vezi evenimentele/s);
   assert.match(html, /home-command/);
   assert.doesNotMatch(html, /Fără link|Restaurante/);
@@ -130,6 +131,24 @@ test("discovery and services select count-aware layouts without blank media trac
   const many = await render();
   assert.match(many, /home-discovery-grid count-3" data-count="3"/);
   assert.match(many, /home-service-grid count-3" data-count="3"/);
+});
+
+test("category dock keeps native link semantics and canonical destinations", async () => {
+  catalogRows = emptyCatalog();
+  homeContent = countHome({
+    quickCategoriesVisible:true,
+    quickCategoriesLabel:"Categorii locale",
+    quickCategories:[
+      {id:"events",label:"Evenimente",href:"/evenimente",icon:"calendar",visible:true,deleted:false},
+      {id:"services",label:"Servicii",href:"/afaceri-si-servicii",icon:"services",visible:true,deleted:false},
+    ],
+  });
+  const html = await render();
+  assert.match(html, /<nav class="home-command" aria-label="Categorii locale">/);
+  assert.match(html, /href="\/evenimente"/);
+  assert.match(html, /href="\/afaceri-si-servicii"/);
+  assert.doesNotMatch(html, /home-command[\s\S]*?<button\b/);
+  assert.doesNotMatch(html, /aria-current=/);
 });
 
 test("homepage accessibility contract keeps one H1, named search, unique ids, and reduced motion", async () => {

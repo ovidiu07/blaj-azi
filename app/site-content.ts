@@ -81,22 +81,22 @@ const informativePage = (key: string, route: string, label: string, title: strin
 
 export const siteContentDefinitions: readonly SiteContentDefinition[] = [
   {
-    key: "theme.site", scope: "theme", route: "*", label: "Aspect și identitate vizuală", group: "Aspect și identitate vizuală", schemaVersion: 2,
+    key: "theme.site", scope: "theme", route: "*", label: "Aspect și identitate vizuală", group: "Aspect și identitate vizuală", schemaVersion: 3,
     defaults: { ...defaultTheme },
     fields: [
-      {path:"canvas",label:"Pânză neagră",kind:"color",group:"Culori globale"},{path:"surface",label:"Suprafață ridicată",kind:"color",group:"Culori globale"},{path:"primary",label:"Acțiune principală",kind:"color",group:"Culori globale"},{path:"primaryDark",label:"Acțiune apăsată",kind:"color",group:"Culori globale"},{path:"accent",label:"Accent oțel",kind:"color",group:"Culori globale"},{path:"accentDark",label:"Accent oțel la interacțiune",kind:"color",group:"Culori globale"},{path:"accentSoft",label:"Suprafață grafit",kind:"color",group:"Culori globale"},{path:"highlight",label:"Metal luminos",kind:"color",group:"Culori globale"},{path:"text",label:"Text principal pe închis",kind:"color",group:"Culori globale"},{path:"textMuted",label:"Text secundar pe închis",kind:"color",group:"Culori globale"},{path:"border",label:"Contur solid",kind:"color",group:"Culori globale"},{path:"focus",label:"Indicator de focalizare",kind:"color",group:"Culori globale"},{path:"headerBackground",label:"Fundal antet",kind:"color",group:"Culori globale"},{path:"buttonText",label:"Text pe acțiunea principală",kind:"color",group:"Culori globale"},
+      {path:"canvas",label:"Pânză neagră",kind:"color",group:"Culori globale"},{path:"surface",label:"Suprafață ridicată",kind:"color",group:"Culori globale"},{path:"primary",label:"Acțiune principală",kind:"color",group:"Culori globale"},{path:"primaryDark",label:"Acțiune apăsată",kind:"color",group:"Culori globale"},{path:"accent",label:"Accent oțel",kind:"color",group:"Culori globale"},{path:"accentDark",label:"Accent oțel la interacțiune",kind:"color",group:"Culori globale"},{path:"accentSoft",label:"Suprafață grafit",kind:"color",group:"Culori globale"},{path:"highlight",label:"Metal luminos",kind:"color",group:"Culori globale"},{path:"decorativeAccent",label:"Accent arhitectural discret",kind:"color",group:"Culori globale"},{path:"text",label:"Text principal pe închis",kind:"color",group:"Culori globale"},{path:"textMuted",label:"Text secundar pe închis",kind:"color",group:"Culori globale"},{path:"border",label:"Contur solid",kind:"color",group:"Culori globale"},{path:"focus",label:"Indicator de focalizare",kind:"color",group:"Culori globale"},{path:"headerBackground",label:"Fundal antet",kind:"color",group:"Culori globale"},{path:"buttonText",label:"Text pe acțiunea principală",kind:"color",group:"Culori globale"},
       {path:"headingFont",label:"Titluri",kind:"font",options:themeFontOptions,group:"Fonturi globale"},{path:"bodyFont",label:"Text curent",kind:"font",options:themeFontOptions,group:"Fonturi globale"},{path:"interfaceFont",label:"Interfață și butoane",kind:"font",options:themeFontOptions,group:"Fonturi globale"},
       {path:"homeHeroBackground",label:"Fundal erou",kind:"color",group:"Pagina principală"},{path:"homeHeroText",label:"Text erou",kind:"color",group:"Pagina principală"},{path:"homeHeroMuted",label:"Text secundar erou",kind:"color",group:"Pagina principală"},{path:"homeDarkSection",label:"Fundal secțiune editorială",kind:"color",group:"Pagina principală"},{path:"homeDarkSectionText",label:"Text secțiuni închise",kind:"color",group:"Pagina principală"},{path:"homeJobsBackground",label:"Fundal secțiune joburi",kind:"color",group:"Pagina principală"},{path:"homeCardBackground",label:"Fundal carduri",kind:"color",group:"Pagina principală"},{path:"homeAlternateBackground",label:"Fundal alternativ",kind:"color",group:"Pagina principală"},{path:"homeCtaBackground",label:"Fundal îndemn final",kind:"color",group:"Pagina principală"},{path:"homeCtaText",label:"Text îndemn final",kind:"color",group:"Pagina principală"},
     ],
   },
   {
-    key: "home", scope: "page", route: "/", label: "Pagina principală", group: "Pagina principală", schemaVersion: 4,
+    key: "home", scope: "page", route: "/", label: "Pagina principală", group: "Pagina principală", schemaVersion: 5,
     defaults: {
       heroVisible: true,
       heroImage: image("/images/campia-libertatii.jpg", "Câmpia Libertății din Blaj", "Țetcu Mircea Rareș", "https://commons.wikimedia.org/", "CC BY-SA 4.0"),
-      kicker: "Ghidul comunității din Blaj", titleLine: "Tot ce contează,", emphasizedTitleLine: "într-un singur loc.",
-      intro: "Descoperă oameni, locuri și lucruri utile — aproape de tine, explicate simplu și actualizate responsabil.",
-      heroTrust: "Informații publicate după verificare.",
+      kicker: "GHID LOCAL INDEPENDENT · BLAJ", titleLine: "Blajul,", emphasizedTitleLine: "la zi.",
+      intro: "Evenimente, locuri, servicii și informații verificate, într-un singur loc.",
+      heroTrust: "Verificat înainte de publicare.",
       searchVisible: true,
       searchLabel: "Caută în Blaj", searchPlaceholder: "Ce cauți în Blaj?", searchButton: "Caută",
       primaryCtaLabel: "Ce se întâmplă azi", primaryCtaHref: "/evenimente?period=today", secondaryCtaLabel: "Adaugă informație", secondaryCtaHref: "/adauga",
@@ -299,8 +299,19 @@ function migrateKnownDefaults(key: string, value: Record<string, unknown>): Reco
     };
     return Object.fromEntries(Object.entries(value).map(([field, current]) => [field, legacy[field]?.includes(String(current)) ? defaultTheme[field as keyof typeof defaultTheme] : current]));
   }
-  if (key !== "home" || value.titleLine !== "Tot ce contează în Blaj,") return value;
-  return { ...value, titleLine: "Tot ce contează," };
+  if (key !== "home") return value;
+  const knownHeroDefaults: Record<string, readonly string[]> = {
+    kicker:["Ghidul comunității din Blaj"],
+    titleLine:["Tot ce contează în Blaj,","Tot ce contează,"],
+    emphasizedTitleLine:["într-un singur loc."],
+    intro:["Descoperă oameni, locuri și lucruri utile — aproape de tine, explicate simplu și actualizate responsabil."],
+    heroTrust:["Informații publicate după verificare."],
+  };
+  const migrated = { ...value };
+  for (const [field, known] of Object.entries(knownHeroDefaults)) {
+    if (known.includes(String(value[field]))) migrated[field] = defaultSiteContent("home")[field];
+  }
+  return migrated;
 }
 
 function deepMerge(defaults: Record<string, unknown>, value: Record<string, unknown>): Record<string, unknown> {

@@ -11,7 +11,7 @@ const DB = {
         if (/FROM site_content_entries WHERE key=\?/i.test(sql)) {
           const key = bindings[0];
           return Object.hasOwn(entries, key)
-            ? { published_json: JSON.stringify(entries[key]), schema_version: key === "home" ? 4 : 1 }
+            ? { published_json: JSON.stringify(entries[key]), schema_version: key === "home" ? 5 : 1 }
             : null;
         }
         return null;
@@ -51,7 +51,7 @@ function minimalHome(overrides = {}) {
 test("hero optional elements are absent from the DOM and leave the deliberate no-image variant", async () => {
   const noImage = await render("/", { home: minimalHome() });
   assert.match(noImage, /home-hero-no-image/);
-  assert.doesNotMatch(noImage, /home-hero-visual|home-image-credit/);
+  assert.doesNotMatch(noImage, /home-hero-visual|home-hero-signal|home-image-credit/);
 
   const noIntro = await render("/", { home: minimalHome({ intro: "" }) });
   assert.doesNotMatch(noIntro, /home-hero-intro/);

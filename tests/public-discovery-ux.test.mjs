@@ -90,5 +90,5 @@ test("navigation and interaction styles expose the responsive accessibility cont
   assert.match(css, /@media \(max-width:1000px\)[\s\S]*\.desktop-filters \{ display:none; \}[\s\S]*\.mobile-filter-button \{ display:inline-flex; \}/);
   assert.match(css, /@media \(prefers-reduced-motion:reduce\)[\s\S]*\.result-card-surface/);
   assert.doesNotMatch(home, /onClick=.*location|window\.location/);
-  assert.match(siteContent, /titleLine: "Tot ce contează,"[\s\S]*emphasizedTitleLine: "într-un singur loc\."/);
+  assert.match(siteContent, /kicker: "GHID LOCAL INDEPENDENT · BLAJ"[\s\S]*titleLine: "Blajul,"[\s\S]*emphasizedTitleLine: "la zi\."/);
 });

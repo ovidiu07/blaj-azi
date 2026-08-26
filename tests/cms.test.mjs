@@ -120,8 +120,20 @@ test("homepage accepts intentional blanks, optional links, cleared media, and up
   assert.equal(loaded.restaurantFilters[0].visible,true);
   assert.equal(loaded.restaurantFilters[0].deleted,false);
 
-  const priorDefault = { ...defaults, titleLine:"Tot ce contează în Blaj," };
-  assert.equal(cms.mergeWithSiteDefaults("home",priorDefault).titleLine,"Tot ce contează,");
+  const priorDefault = {
+    ...defaults,
+    kicker:"Ghidul comunității din Blaj",
+    titleLine:"Tot ce contează în Blaj,",
+    emphasizedTitleLine:"într-un singur loc.",
+    intro:"Descoperă oameni, locuri și lucruri utile — aproape de tine, explicate simplu și actualizate responsabil.",
+    heroTrust:"Informații publicate după verificare.",
+  };
+  const migratedHero = cms.mergeWithSiteDefaults("home",priorDefault);
+  assert.equal(migratedHero.kicker,"GHID LOCAL INDEPENDENT · BLAJ");
+  assert.equal(migratedHero.titleLine,"Blajul,");
+  assert.equal(migratedHero.emphasizedTitleLine,"la zi.");
+  assert.equal(migratedHero.intro,"Evenimente, locuri, servicii și informații verificate, într-un singur loc.");
+  assert.equal(migratedHero.heroTrust,"Verificat înainte de publicare.");
   assert.equal(cms.mergeWithSiteDefaults("home",{ ...priorDefault, titleLine:"Titlu personalizat" }).titleLine,"Titlu personalizat");
   assert.equal(cms.mergeWithSiteDefaults("home",{ ...priorDefault, titleLine:"" }).titleLine,"");
 });

@@ -55,6 +55,7 @@ function Hero({ content }: { content: HomeCopy }) {
   const secondaryAction = action(content, "secondaryCtaLabel", "secondaryCtaHref");
   const searchVisible = enabled(content, "searchVisible") && Boolean(value(content, "searchLabel") && value(content, "searchButton"));
   const hasTitle = Boolean(value(content, "titleLine") || value(content, "emphasizedTitleLine"));
+  const hasHeroMeta = Boolean(primaryAction || secondaryAction || value(content, "heroTrust"));
   const meaningful = hasImage || hasTitle || Boolean(value(content, "kicker") || value(content, "intro") || value(content, "heroTrust") || searchVisible || primaryAction || secondaryAction);
   if (!enabled(content, "heroVisible") || !meaningful) return null;
 
@@ -69,17 +70,19 @@ function Hero({ content }: { content: HomeCopy }) {
           <input id="hero-query" name="q" placeholder={value(content, "searchPlaceholder") || undefined} />
           <button type="submit">{value(content, "searchButton")}<ArrowRight size={18} aria-hidden="true" /></button>
         </form>}
-        {(primaryAction || secondaryAction) && <div className="home-hero-actions">
-          {primaryAction && <Link className="button" href={primaryAction.href}>{primaryAction.label}<ArrowRight size={18} aria-hidden="true" /></Link>}
-          {secondaryAction && <Link className="home-inline-link" href={secondaryAction.href}>{secondaryAction.label}<ChevronRight size={17} aria-hidden="true" /></Link>}
+        {hasHeroMeta && <div className="home-hero-meta">
+          {(primaryAction || secondaryAction) && <div className="home-hero-actions">
+            {primaryAction && <Link className="button" href={primaryAction.href}>{primaryAction.label}<ArrowRight size={18} aria-hidden="true" /></Link>}
+            {secondaryAction && <Link className="home-inline-link" href={secondaryAction.href}>{secondaryAction.label}<ChevronRight size={17} aria-hidden="true" /></Link>}
+          </div>}
+          {value(content, "heroTrust") && <p className="home-trust"><ShieldCheck size={18} aria-hidden="true" />{value(content, "heroTrust")}</p>}
         </div>}
-        {value(content, "heroTrust") && <p className="home-trust"><ShieldCheck size={18} aria-hidden="true" />{value(content, "heroTrust")}</p>}
       </div>
       {hasImage ? <figure className="home-hero-visual">
         <img src={cmsImageUrl(image)} alt={image.decorative ? "" : image.alt} style={{ objectPosition: image.objectPosition }} width="1200" height="1500" fetchPriority="high" sizes="(max-width: 760px) calc(100vw - 32px), (max-width: 1100px) 42vw, 520px" />
         <div className="home-hero-image-signal" aria-hidden="true"><span>Descoperă</span><strong>Blaj</strong></div>
         {image.showCredit && <ImageCredit image={image} />}
-      </figure> : <div className="home-hero-signal" aria-hidden="true"><span>Blaj</span><strong>Azi</strong><i /><i /><i /></div>}
+      </figure> : null}
     </div>
   </section>;
 }
@@ -174,7 +177,8 @@ function OffersSection({ content, offers }: { content: HomeCopy; offers: PublicC
 function RestaurantsSection({ content, restaurants, shown, filters, activeFilter, onFilter }: { content: HomeCopy; restaurants: PublicRestaurant[]; shown: PublicRestaurant[]; filters: RepeatableItem[]; activeFilter: string; onFilter: (id: string) => void }) {
   const heading = sectionHead(content, "restaurants");
   if (!enabled(content, "restaurantsVisible") || restaurants.length === 0) return null;
-  return <section className="home-module home-restaurants"><div className="container">{heading && <SectionHead {...heading} />}{filters.length > 0 && <div className="home-filters" role="group" aria-label={value(content, "restaurantsFiltersLabel") || undefined}>{filters.map((filter, index) => { const id = filterId(filter, `food-${index}`); return <button type="button" aria-pressed={activeFilter === id} onClick={() => onFilter(id)} className={activeFilter === id ? "active" : ""} key={filter.id || `${filter.value}-${index}`}>{filter.value}</button>; })}</div>}<div className="home-food-list">{shown.slice(0, 5).map(restaurant => <article key={restaurant.id}><Link className="home-food-row" href={`/unde-mancam/${restaurant.id}`}><div>{restaurant.type && <p className="home-eyebrow">{restaurant.type}{restaurant.isDemo ? " · Exemplu demonstrativ" : ""}</p>}<h3>{restaurant.name}</h3>{restaurant.dish && <p>{restaurant.dish}</p>}</div>{restaurant.price && <strong>{restaurant.price}</strong>}{value(content, "restaurantsDetailsLabel") && <span className="home-row-affordance"><ArrowRight aria-hidden="true" /></span>}</Link></article>)}</div></div></section>;
+  const visible = shown.slice(0, 5);
+  return <section className="home-module home-restaurants"><div className="container">{heading && <SectionHead {...heading} />}{filters.length > 0 && <div className="home-filters" role="group" aria-label={value(content, "restaurantsFiltersLabel") || undefined}>{filters.map((filter, index) => { const id = filterId(filter, `food-${index}`); return <button type="button" aria-pressed={activeFilter === id} onClick={() => onFilter(id)} className={activeFilter === id ? "active" : ""} key={filter.id || `${filter.value}-${index}`}>{filter.value}</button>; })}</div>}<div className={`home-food-list count-${Math.min(visible.length, 5)}`} data-count={visible.length}>{visible.map(restaurant => <article key={restaurant.id}><Link className={`home-food-row ${restaurant.image ? "has-image" : "no-image"}`} href={`/unde-mancam/${restaurant.id}`}>{restaurant.image && <img src={restaurant.image} alt={restaurant.imageAlt || ""} width="240" height="160" loading="lazy" sizes="(max-width: 700px) 88px, 120px" />}<div>{restaurant.type && <p className="home-eyebrow">{restaurant.type}{restaurant.isDemo ? " · Exemplu demonstrativ" : ""}</p>}<h3>{restaurant.name}</h3>{restaurant.dish && <p>{restaurant.dish}</p>}</div>{restaurant.price && <strong>{restaurant.price}</strong>}{value(content, "restaurantsDetailsLabel") && <span className="home-row-affordance"><ArrowRight aria-hidden="true" /></span>}</Link></article>)}</div></div></section>;
 }
 
 function JobsSection({ content, jobs }: { content: HomeCopy; jobs: PublicCatalog["jobs"] }) {

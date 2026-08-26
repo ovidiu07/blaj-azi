@@ -20,7 +20,7 @@ test("server-renders the Blaj Azi homepage with Romanian metadata", async () => 
   const html = await response.text();
   assert.match(html, /<html lang="ro">/i);
   assert.match(html, /<title>Blaj Azi — Ghidul local al Blajului<\/title>/i);
-  assert.match(html, /<h1><span>Tot ce contează,<\/span><em>într-un singur loc\.<\/em><\/h1>/);
+  assert.match(html, /<h1><span>Blajul,<\/span><em>la zi\.<\/em><\/h1>/);
   assert.doesNotMatch(html, /Conținut demonstrativ/, "fallback-ul fără D1 nu trebuie să publice exemple demo");
   assert.doesNotMatch(html, /codex-preview|Your site is taking shape|react-loading-skeleton/i);
 });

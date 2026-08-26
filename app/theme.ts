@@ -3,7 +3,7 @@ export type ThemeFont = typeof themeFontOptions[number];
 
 export const defaultTheme = {
   canvas: "#050607", surface: "#0d0f12", primary: "#f4f6f7", primaryDark: "#dfe3e6",
-  accent: "#a9bdc9", accentDark: "#c7d2d9", accentSoft: "#181d22", highlight: "#d7dce1",
+  accent: "#a9bdc9", accentDark: "#c7d2d9", accentSoft: "#181d22", highlight: "#d7dce1", decorativeAccent: "#b9a27c",
   text: "#f5f7f8", textMuted: "#b8c0c8", border: "#3b4249", focus: "#ffffff",
   headerBackground: "#080a0c", buttonText: "#08090a",
   headingFont: "manrope", bodyFont: "inter", interfaceFont: "manrope",
@@ -90,6 +90,7 @@ export function themeCssProperties(value: unknown): Record<string, string> {
     "--color-border-subtle":"rgba(255,255,255,.10)", "--color-border-default":"rgba(255,255,255,.17)", "--color-border-strong":"rgba(255,255,255,.28)", "--color-border-inverse":"#d2d6d8",
     "--color-graphite":"#2a3036", "--color-metal":"#9ba5ae", "--color-metal-bright":theme.highlight,
     "--color-steel-accent":theme.accent, "--color-steel-accent-hover":theme.accentDark,
+    "--color-civic-accent":theme.decorativeAccent,
     "--color-action":theme.primary, "--color-action-hover":"#ffffff", "--color-action-active":theme.primaryDark, "--color-action-foreground":theme.buttonText,
     "--color-success":"#71d39b", "--color-warning":"#e0b866", "--color-danger":"#ff7d82", "--color-info":"#7db4ea",
     "--color-header-background":theme.headerBackground, "--color-button-text":theme.buttonText,

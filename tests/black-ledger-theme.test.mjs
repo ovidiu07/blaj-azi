@@ -17,7 +17,7 @@ test("Black Ledger exposes every required semantic token and critical pairs pass
     "--color-text-disabled":"#69717a", "--color-text-inverse":"#090b0d", "--color-text-inverse-secondary":"#4e565e",
     "--color-text-inverse-tertiary":"#68717a", "--color-border-inverse":"#d2d6d8", "--color-graphite":"#2a3036",
     "--color-metal":"#9ba5ae", "--color-metal-bright":"#d7dce1", "--color-steel-accent":"#a9bdc9",
-    "--color-steel-accent-hover":"#c7d2d9", "--color-action":"#f4f6f7", "--color-action-hover":"#ffffff",
+    "--color-steel-accent-hover":"#c7d2d9", "--color-civic-accent":"#b9a27c", "--color-action":"#f4f6f7", "--color-action-hover":"#ffffff",
     "--color-action-active":"#dfe3e6", "--color-action-foreground":"#08090a", "--color-success":"#71d39b",
     "--color-warning":"#e0b866", "--color-danger":"#ff7d82", "--color-info":"#7db4ea",
   };
@@ -50,6 +50,7 @@ test("legacy stock theme values migrate to Black Ledger without replacing custom
   };
   assert.deepEqual(cms.mergeWithSiteDefaults("theme.site", legacy), theme.defaultTheme);
   assert.equal(cms.mergeWithSiteDefaults("theme.site", { ...legacy, accent:"#abcdef" }).accent, "#abcdef");
+  assert.equal(cms.mergeWithSiteDefaults("theme.site", legacy).decorativeAccent, "#b9a27c");
 });
 
 test("shared Black Ledger CSS enforces compact phone cards, focus, fields, consent, and reduced motion", () => {
@@ -64,6 +65,8 @@ test("shared Black Ledger CSS enforces compact phone cards, focus, fields, conse
   assert.match(css, /\.place-card \.place-card-surface\s*\{[^}]*display:grid/);
   assert.match(css, /:focus-visible\s*\{[^}]*outline:3px solid var\(--color-focus\)/);
   assert.match(css, /@media \(prefers-reduced-motion:reduce\)[\s\S]*transition-duration:\.01ms!important/);
+  assert.match(css, /\.home-search\s*\{[\s\S]*linear-gradient\(180deg,#14191e 0%,#0d1115 54%,#090c0f 100%\)/);
+  assert.match(css, /\.home-command-grid\s*\{[\s\S]*border-radius:20px/);
   assert.match(richTextEditor, /aria-pressed=\{pressed\}/);
   assert.match(richTextEditor, /pressed=\{activeFormats\.has\("bold"\)\}/);
   assert.doesNotMatch(css, /#000000\b|#faf8f4\b|#173f4b\b|#b84b3b\b|#e2b85b\b|#dfe3e2\b/i);
