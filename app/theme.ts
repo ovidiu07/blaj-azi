@@ -4,7 +4,8 @@ export type ThemeFont = typeof themeFontOptions[number];
 export const defaultTheme = {
   canvas: "#050607", surface: "#0d0f12", primary: "#f4f6f7", primaryDark: "#dfe3e6",
   accent: "#a9bdc9", accentDark: "#c7d2d9", accentSoft: "#181d22", highlight: "#d7dce1", decorativeAccent: "#b9a27c",
-  text: "#f5f7f8", textMuted: "#b8c0c8", border: "#3b4249", focus: "#ffffff",
+  brandAction: "#b84b3b", brandActionHover: "#a63f32", brandActionActive: "#99382d", brandActionSoft: "#f3e3de", brandActionForeground: "#ffffff",
+  text: "#f5f7f8", textMuted: "#b8c0c8", border: "#3b4249", focus: "#b84b3b",
   headerBackground: "#080a0c", buttonText: "#08090a",
   headingFont: "manrope", bodyFont: "inter", interfaceFont: "manrope",
   homeHeroBackground: "#050607", homeHeroText: "#f5f7f8", homeHeroMuted: "#b8c0c8",
@@ -31,7 +32,7 @@ export function validateTheme(value: unknown): ThemeSettings {
   for (const key of themeColorKeys) if (!/^#[0-9a-f]{6}$/i.test(theme[key])) throw new Error(`${key}: folosește o culoare HEX completă, de forma #050607.`);
   for (const key of ["headingFont", "bodyFont", "interfaceFont"] as const) if (!themeFontOptions.includes(theme[key] as ThemeFont)) throw new Error(`${key}: font neacceptat.`);
   const failures = themeContrastChecks(theme).filter(check => !check.pass);
-  if (failures.length) throw new Error(`Contrast insuficient: ${failures.map(item => `${item.label} ${item.ratio.toFixed(2)}:1`).join(", ")}. Pragul este 4.5:1.`);
+  if (failures.length) throw new Error(`Contrast insuficient: ${failures.map(item => `${item.label} ${item.ratio.toFixed(2)}:1 (prag ${item.minimum}:1)`).join(", ")}.`);
   return theme;
 }
 
@@ -47,12 +48,24 @@ export function themeContrastChecks(themeValue: unknown) {
     contrast("Text secțiune închisă / fundal", theme.homeDarkSectionText, theme.homeDarkSection),
     contrast("Text secțiune joburi / fundal", theme.text, theme.homeJobsBackground),
     contrast("Text CTA / fundal CTA", theme.homeCtaText, theme.homeCtaBackground),
+    contrast("Text pe accentul cald", theme.brandActionForeground, theme.brandAction),
+    contrast("Text pe accentul cald la trecere", theme.brandActionForeground, theme.brandActionHover),
+    contrast("Text pe accentul cald activ", theme.brandActionForeground, theme.brandActionActive),
+    contrast("Accent cald / fundal închis", theme.brandAction, theme.canvas, 3),
+    contrast("Accent cald / fundal deschis", theme.brandAction, "#f6f7f5", 3),
+    contrast("Indicator focus / fundal închis", theme.focus, theme.canvas, 3),
+    contrast("Indicator focus / fundal deschis", theme.focus, "#f6f7f5", 3),
+    contrast("Text pe suprafața caldă", "#090b0d", theme.brandActionSoft),
+    contrast("Succes / suprafață închisă", "#71d39b", theme.surface),
+    contrast("Avertizare / suprafață închisă", "#e0b866", theme.surface),
+    contrast("Pericol / suprafață închisă", "#ff7d82", theme.surface),
+    contrast("Informație / suprafață închisă", "#7db4ea", theme.surface),
   ];
 }
 
-function contrast(label: string, foreground: string, background: string) {
+function contrast(label: string, foreground: string, background: string, minimum = 4.5) {
   const ratio = contrastRatio(foreground, background);
-  return { label, foreground, background, ratio, pass: ratio >= 4.5 };
+  return { label, foreground, background, ratio, minimum, pass: ratio >= minimum };
 }
 
 export function contrastRatio(first: string, second: string) {
@@ -86,12 +99,14 @@ export function themeCssProperties(value: unknown): Record<string, string> {
     "--color-accent-soft":theme.accentSoft, "--color-highlight":theme.highlight, "--color-text":theme.text,
     "--color-text-primary":theme.text, "--color-text-secondary":theme.textMuted, "--color-text-tertiary":"#89929c", "--color-text-disabled":"#69717a",
     "--color-text-inverse":"#090b0d", "--color-text-inverse-secondary":"#4e565e", "--color-text-inverse-tertiary":"#68717a",
-    "--color-text-muted":theme.textMuted, "--color-border":theme.border, "--color-focus":theme.focus, "--color-focus-outer":"rgba(169,189,201,.62)",
+    "--color-text-muted":theme.textMuted, "--color-border":theme.border, "--color-focus":theme.focus, "--color-focus-inner":"#050607", "--color-focus-outer":"rgba(184,75,59,.38)",
     "--color-border-subtle":"rgba(255,255,255,.10)", "--color-border-default":"rgba(255,255,255,.17)", "--color-border-strong":"rgba(255,255,255,.28)", "--color-border-inverse":"#d2d6d8",
     "--color-graphite":"#2a3036", "--color-metal":"#9ba5ae", "--color-metal-bright":theme.highlight,
     "--color-steel-accent":theme.accent, "--color-steel-accent-hover":theme.accentDark,
     "--color-civic-accent":theme.decorativeAccent,
     "--color-action":theme.primary, "--color-action-hover":"#ffffff", "--color-action-active":theme.primaryDark, "--color-action-foreground":theme.buttonText,
+    "--color-brand-action":theme.brandAction, "--color-brand-action-hover":theme.brandActionHover, "--color-brand-action-active":theme.brandActionActive,
+    "--color-brand-action-soft":theme.brandActionSoft, "--color-brand-action-foreground":theme.brandActionForeground,
     "--color-success":"#71d39b", "--color-warning":"#e0b866", "--color-danger":"#ff7d82", "--color-info":"#7db4ea",
     "--color-header-background":theme.headerBackground, "--color-button-text":theme.buttonText,
     "--theme-font-heading":fontStacks[theme.headingFont as ThemeFont], "--theme-font-body":fontStacks[theme.bodyFont as ThemeFont],

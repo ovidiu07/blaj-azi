@@ -53,7 +53,8 @@ export async function loadPublishedSiteContent(key: string, db?: D1Database): Pr
     if (!row) return defaults;
     const definition = siteContentByKey.get(key);
     if (!definition || row.schema_version > definition.schemaVersion) throw new Error("schema_version_mismatch");
-    return mergeWithSiteDefaults(key, JSON.parse(row.published_json));
+    const content = mergeWithSiteDefaults(key, JSON.parse(row.published_json));
+    return await omitUnavailablePublishedMedia(content, runtimeDb);
   } catch (error) {
     console.error("site_content_fallback", JSON.stringify({ key, reason: error instanceof Error ? error.message : "unknown" }));
     return defaults;
@@ -212,4 +213,28 @@ async function assertMediaReferences(content: Record<string, unknown>, publishin
     if (!row || row.media_status !== "active") throw new PlatformError(400, `Imaginea #${id} nu mai este disponibilă.`, "invalid_media_reference");
     if (publishing && row.approval_status !== "approved") throw new PlatformError(400, `Imaginea #${id} trebuie aprobată înainte de publicare.`, "media_not_approved");
   }
+}
+
+async function omitUnavailablePublishedMedia(content: Record<string, unknown>, db: D1Database): Promise<Record<string, unknown>> {
+  const ids = [...referencedMediaIds(content)];
+  if (!ids.length) return content;
+  try {
+    const unavailable = new Set<number>();
+    await Promise.all(ids.map(async id => {
+      const media = await db.prepare("SELECT id FROM media_assets WHERE id=? AND media_status='active' AND approval_status='approved' LIMIT 1").bind(id).first<{ id: number }>();
+      if (!media) unavailable.add(id);
+    }));
+    return unavailable.size ? scrubUnavailableMedia(content, unavailable) as Record<string, unknown> : content;
+  } catch (error) {
+    console.error("site_content_media_check_failed", JSON.stringify({ reason: error instanceof Error ? error.message : "unknown" }));
+    return content;
+  }
+}
+
+function scrubUnavailableMedia(value: unknown, unavailable: ReadonlySet<number>): unknown {
+  if (Array.isArray(value)) return value.map(item => scrubUnavailableMedia(item, unavailable));
+  if (!value || typeof value !== "object") return value;
+  const record = value as Record<string, unknown>;
+  if (Number.isInteger(record.mediaId) && unavailable.has(Number(record.mediaId))) return { ...record, src: "", mediaId: null };
+  return Object.fromEntries(Object.entries(record).map(([key, item]) => [key, scrubUnavailableMedia(item, unavailable)]));
 }

@@ -19,7 +19,9 @@ test("Black Ledger exposes every required semantic token and critical pairs pass
     "--color-metal":"#9ba5ae", "--color-metal-bright":"#d7dce1", "--color-steel-accent":"#a9bdc9",
     "--color-steel-accent-hover":"#c7d2d9", "--color-civic-accent":"#b9a27c", "--color-action":"#f4f6f7", "--color-action-hover":"#ffffff",
     "--color-action-active":"#dfe3e6", "--color-action-foreground":"#08090a", "--color-success":"#71d39b",
-    "--color-warning":"#e0b866", "--color-danger":"#ff7d82", "--color-info":"#7db4ea",
+    "--color-brand-action":"#b84b3b", "--color-brand-action-hover":"#a63f32", "--color-brand-action-active":"#99382d",
+    "--color-brand-action-soft":"#f3e3de", "--color-brand-action-foreground":"#ffffff",
+    "--color-warning":"#e0b866", "--color-danger":"#ff7d82", "--color-info":"#7db4ea", "--color-focus":"#b84b3b",
   };
   for (const [token,value] of Object.entries(expected)) assert.equal(properties[token], value, token);
   for (const token of ["--color-border-subtle","--color-border-default","--color-border-strong","--color-focus","--color-focus-outer"]) assert.ok(properties[token], token);
@@ -31,6 +33,9 @@ test("Black Ledger exposes every required semantic token and critical pairs pass
     ["inverse secondary", "#4e565e", "#f6f7f5", 4.5],
     ["action", "#08090a", "#f4f6f7", 4.5],
     ["steel link", "#c7d2d9", "#0d0f12", 4.5],
+    ["warm action label", "#ffffff", "#b84b3b", 4.5],
+    ["warm focus on canvas", "#b84b3b", "#050607", 3],
+    ["warm focus on inverse", "#b84b3b", "#f6f7f5", 3],
     ["success", "#71d39b", "#0d0f12", 4.5],
     ["warning", "#e0b866", "#0d0f12", 4.5],
     ["danger", "#ff7d82", "#0d0f12", 4.5],
@@ -51,6 +56,12 @@ test("legacy stock theme values migrate to Black Ledger without replacing custom
   assert.deepEqual(cms.mergeWithSiteDefaults("theme.site", legacy), theme.defaultTheme);
   assert.equal(cms.mergeWithSiteDefaults("theme.site", { ...legacy, accent:"#abcdef" }).accent, "#abcdef");
   assert.equal(cms.mergeWithSiteDefaults("theme.site", legacy).decorativeAccent, "#b9a27c");
+  const previousBlackLedger = { ...theme.defaultTheme, focus:"#ffffff" };
+  for (const key of ["brandAction","brandActionHover","brandActionActive","brandActionSoft","brandActionForeground"]) delete previousBlackLedger[key];
+  const migrated = cms.mergeWithSiteDefaults("theme.site", previousBlackLedger);
+  assert.equal(migrated.brandAction,"#b84b3b");
+  assert.equal(migrated.focus,"#b84b3b");
+  assert.equal(cms.mergeWithSiteDefaults("theme.site",{...previousBlackLedger,focus:"#abcdef"}).focus,"#abcdef");
 });
 
 test("shared Black Ledger CSS enforces compact phone cards, focus, fields, consent, and reduced motion", () => {
@@ -64,10 +75,18 @@ test("shared Black Ledger CSS enforces compact phone cards, focus, fields, conse
   assert.match(css, /\.rte-toolbar button\s*\{[^}]*min-width:44px;[^}]*min-height:44px/);
   assert.match(css, /\.place-card \.place-card-surface\s*\{[^}]*display:grid/);
   assert.match(css, /:focus-visible\s*\{[^}]*outline:3px solid var\(--color-focus\)/);
+  assert.match(css, /button:not\(\.danger-action\):not\(:disabled\):not\(\[aria-disabled="true"\]\):focus-visible[\s\S]*background:var\(--color-brand-action\);[\s\S]*color:var\(--color-brand-action-foreground\);/);
+  assert.match(css, /button:focus-visible svg,[\s\S]*stroke:currentColor;/);
+  assert.match(css, /button:disabled:focus-visible,[\s\S]*outline-color:var\(--color-text-disabled\)/);
+  assert.match(css, /\.danger-action:focus-visible\s*\{[^}]*var\(--color-danger\)/);
+  assert.match(css, /\.home-filters button\[aria-pressed="true"\],[\s\S]*\.search-facets button\[aria-pressed="true"\],[\s\S]*background:var\(--color-brand-action\);[\s\S]*font-weight:850;/);
+  assert.match(css, /\.cms-section-visibility\.is-hidden button\s*\{[^}]*background:color-mix\([^}]*color:var\(--color-warning\)/);
+  assert.match(css, /\.home-hero-grid\s*\{[^}]*grid-template-columns:minmax\(0,\.88fr\) minmax\(0,1\.12fr\)/);
+  assert.match(css, /\.home-hero-visual\s*\{[^}]*max-width:720px/);
   assert.match(css, /@media \(prefers-reduced-motion:reduce\)[\s\S]*transition-duration:\.01ms!important/);
   assert.match(css, /\.home-search\s*\{[\s\S]*linear-gradient\(180deg,#14191e 0%,#0d1115 54%,#090c0f 100%\)/);
   assert.match(css, /\.home-command-grid\s*\{[\s\S]*border-radius:20px/);
   assert.match(richTextEditor, /aria-pressed=\{pressed\}/);
   assert.match(richTextEditor, /pressed=\{activeFormats\.has\("bold"\)\}/);
-  assert.doesNotMatch(css, /#000000\b|#faf8f4\b|#173f4b\b|#b84b3b\b|#e2b85b\b|#dfe3e2\b/i);
+  assert.doesNotMatch(css, /#000000\b|#faf8f4\b|#173f4b\b|#e2b85b\b|#dfe3e2\b|neon|glow/i);
 });

@@ -53,6 +53,11 @@ test("hero optional elements are absent from the DOM and leave the deliberate no
   assert.match(noImage, /home-hero-no-image/);
   assert.doesNotMatch(noImage, /home-hero-visual|home-hero-signal|home-image-credit/);
 
+  const unavailableImage = await render("/", { home: minimalHome({ heroImage: { src:"", mediaId:404, alt:"Imagine indisponibilă", decorative:false, caption:"Credit orfan", author:"Autor", sourceUrl:"", license:"", objectPosition:"center", showCredit:true } }) });
+  const unavailableMain = unavailableImage.match(/<main id="continut">([\s\S]*?)<\/main>/)?.[1] ?? "";
+  assert.match(unavailableMain, /home-hero-no-image/);
+  assert.doesNotMatch(unavailableMain, /home-hero-visual|home-image-credit|Credit orfan/);
+
   const noIntro = await render("/", { home: minimalHome({ intro: "" }) });
   assert.doesNotMatch(noIntro, /home-hero-intro/);
   assert.match(noIntro, /home-search/);
@@ -82,6 +87,14 @@ test("image credit, empty page headers, and empty legal bodies do not render wra
   }) });
   assert.match(imageWithoutCredit, /home-hero-has-image/);
   assert.doesNotMatch(imageWithoutCredit, /home-image-credit/);
+
+  const imageWithCredit = await render("/", { home: minimalHome({
+    titleLine:"Un titlu românesc suficient de lung pentru a verifica o coloană lizibilă",
+    heroImage: { src:"/images/campia-libertatii.jpg", mediaId:null, alt:"Câmpia Libertății", decorative:false, caption:"Câmpia Libertății", author:"Autor", sourceUrl:"https://commons.wikimedia.org/", license:"CC BY-SA 4.0", objectPosition:"center", showCredit:true },
+  }) });
+  assert.match(imageWithCredit, /home-hero-has-image/);
+  assert.match(imageWithCredit, /home-image-credit/);
+  assert.match(imageWithCredit, /sizes="\(max-width: 820px\) calc\(100vw - 28px\), \(max-width: 1100px\) 44vw, \(max-width: 1440px\) 52vw, 720px"/);
 
   const legal = await render("/termeni", { "page.terms": { eyebrow: "Legal", title: "Termeni", intro: "Condiții de utilizare", blocks: [] } });
   assert.match(legal, /<h1>Termeni<\/h1>/);

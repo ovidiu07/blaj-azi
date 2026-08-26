@@ -69,6 +69,10 @@ test("publishing enforces approved active media while drafts may reference pendi
   await db.prepare("UPDATE media_assets SET approval_status='approved' WHERE id=900").run();
   await service.siteContentAction(admin,"home","publish",2,undefined,db);
   assert.equal((await service.loadPublishedSiteContent("home",db)).heroImage.mediaId,900);
+  await db.prepare("UPDATE media_assets SET media_status='archived' WHERE id=900").run();
+  const unavailable = await service.loadPublishedSiteContent("home",db);
+  assert.equal(unavailable.heroImage.mediaId,null);
+  assert.equal(unavailable.heroImage.src,"");
 });
 
 test("theme drafts may be explored privately but weak contrast cannot be published or restored", async () => {
@@ -81,6 +85,8 @@ test("theme drafts may be explored privately but weak contrast cannot be publish
   const draft=await service.loadAdminSiteContent(admin,"theme.site",db);
   assert.equal(draft.draft.text,"#050607");
   assert.equal(draft.published.text,"#f5f7f8");
+  assert.equal(cms.siteContentByKey.get("theme.site").schemaVersion,4);
+  assert.equal(draft.published.brandAction,"#b84b3b");
 });
 
 test("homepage accepts intentional blanks, optional links, cleared media, and upgrades legacy records by presence", async () => {

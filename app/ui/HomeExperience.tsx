@@ -79,7 +79,7 @@ function Hero({ content }: { content: HomeCopy }) {
         </div>}
       </div>
       {hasImage ? <figure className="home-hero-visual">
-        <img src={cmsImageUrl(image)} alt={image.decorative ? "" : image.alt} style={{ objectPosition: image.objectPosition }} width="1200" height="1500" fetchPriority="high" sizes="(max-width: 760px) calc(100vw - 32px), (max-width: 1100px) 42vw, 520px" />
+        <img src={cmsImageUrl(image)} alt={image.decorative ? "" : image.alt} style={{ objectPosition: image.objectPosition }} width="1200" height="1500" fetchPriority="high" sizes="(max-width: 820px) calc(100vw - 28px), (max-width: 1100px) 44vw, (max-width: 1440px) 52vw, 720px" />
         <div className="home-hero-image-signal" aria-hidden="true"><span>Descoperă</span><strong>Blaj</strong></div>
         {image.showCredit && <ImageCredit image={image} />}
       </figure> : null}
