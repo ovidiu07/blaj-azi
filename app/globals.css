@@ -2313,7 +2313,7 @@ input:-webkit-autofill,input:-webkit-autofill:hover,input:-webkit-autofill:focus
    treatments stay on the homepage's primary instruments while shared public
    cards remain quieter and continue to use the typed theme variables. */
 .site-header {
-  background:linear-gradient(180deg,rgba(13,16,19,.97),rgba(6,8,10,.96));
+  background:linear-gradient(#888888f7, #06080af5);
   border-bottom-color:rgba(255,255,255,.11);
   box-shadow:inset 0 1px 0 rgba(255,255,255,.04),0 14px 36px rgba(0,0,0,.26);
 }
@@ -2323,13 +2323,17 @@ input:-webkit-autofill,input:-webkit-autofill:hover,input:-webkit-autofill:focus
   font-weight:700;
   letter-spacing:-.055em;
 }
+.logo span {
+  color:#ff0000;
+  text-shadow:0 1px 0 #050607,1px 0 0 #050607,0 -1px 0 #050607,-1px 0 0 #050607;
+}
 .logo b {
   padding:1px 0 1px 8px;
   border:0;
   border-left:1px solid var(--color-civic-accent);
   border-radius:0;
   background:transparent;
-  color:var(--color-text-secondary);
+  color:#ffffff;
   box-shadow:none;
   font-size:.68em;
   font-weight:700;
@@ -2338,13 +2342,21 @@ input:-webkit-autofill,input:-webkit-autofill:hover,input:-webkit-autofill:focus
 }
 .desktop-nav>a,.nav-more>summary { font-weight:650; letter-spacing:-.01em; }
 .header-actions .icon-button { background:linear-gradient(180deg,rgba(255,255,255,.055),rgba(255,255,255,.018)); }
+.site-header .nav-wrap {
+  height:calc(100% - 12px);
+  padding-inline:12px;
+  border:1px solid rgba(255,255,255,.13);
+  border-radius:15px;
+  background:#06080ade;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.08),0 8px 24px rgba(0,0,0,.28);
+}
 
 .home-hero {
   padding:clamp(58px,6.8vw,94px) 0 clamp(54px,6vw,82px);
   background:
-    radial-gradient(circle at 78% 4%,rgba(255,255,255,.065),transparent 34%),
-    radial-gradient(circle at 6% 68%,rgba(185,162,124,.04),transparent 30%),
-    linear-gradient(180deg,#050607 0%,#07090b 58%,#050607 100%);
+    radial-gradient(circle at 78% 4%, #fff1, #0000 34%),
+    radial-gradient(circle at 6% 68%, #b9a27c0a, #0000 30%),
+    linear-gradient(#050607 0%, #313e4b 58%, #050607 100%);
 }
 .home-hero-grid {
   grid-template-columns:minmax(0,.88fr) minmax(0,1.12fr);
@@ -2492,9 +2504,9 @@ input:-webkit-autofill,input:-webkit-autofill:hover,input:-webkit-autofill:focus
 .home-command-grid>a:first-child .home-command-icon { border-color:color-mix(in srgb,var(--color-civic-accent) 44%,transparent); color:var(--color-civic-accent); }
 
 .home-module,.home-discovery { padding-block:var(--home-section-space); }
-.home-events { background:linear-gradient(180deg,var(--color-canvas),#07090b); }
-.home-discovery { background:linear-gradient(180deg,#090c0f,#0d1115 48%,#090c0f); }
-.home-services { background:var(--color-canvas); color:var(--color-text-primary); }
+.home-events { background:linear-gradient(180deg, #40484f, #07090b); }
+.home-discovery { background:linear-gradient(#b84b3b61, #0d1115 48%, #090c0f); }
+.home-services { background:#5c5f62b5; color:var(--color-text-primary); }
 .home-offers { background:linear-gradient(180deg,#080a0c,#0a0d10); color:var(--color-text-primary); }
 .home-restaurants { background:var(--color-canvas); }
 .home-jobs { background:linear-gradient(180deg,#090c0f,#080a0c); }
@@ -2503,7 +2515,23 @@ input:-webkit-autofill,input:-webkit-autofill:hover,input:-webkit-autofill:focus
 .home-eyebrow { color:var(--color-brand-action); }
 .home-services .home-section-head h2,.home-offers .home-section-head h2,.home-services .home-service-card h3,.home-offers .home-offer-card h3 { color:var(--color-text-primary); }
 .home-services .home-eyebrow,.home-offers .home-eyebrow { color:var(--color-brand-action); }
-.home-services .home-inline-link,.home-offers .home-inline-link { color:var(--color-text-secondary); }
+.home-services .home-inline-link,.home-offers .home-inline-link {
+  min-height:44px;
+  padding:8px 12px;
+  border:1px solid rgba(255,255,255,.18);
+  border-radius:10px;
+  background:#050607;
+  color:#ff0435;
+  text-decoration:underline;
+  text-decoration-thickness:1.5px;
+  text-underline-offset:4px;
+}
+.home-services .home-inline-link:hover,.home-offers .home-inline-link:hover,
+.home-services .home-inline-link:focus-visible,.home-offers .home-inline-link:focus-visible {
+  background:#050607;
+  color:#ff0435;
+  text-decoration-thickness:2px;
+}
 .home-event-card,.home-service-card,.home-offer-card {
   border-color:var(--color-border-subtle);
   background:linear-gradient(150deg,rgba(255,255,255,.055),transparent 36%),var(--color-surface-1);

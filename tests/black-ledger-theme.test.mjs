@@ -6,6 +6,7 @@ const theme = await import("../app/theme.ts");
 const cms = await import("../app/site-content.ts");
 const css = await readFile(new URL("../app/globals.css", import.meta.url), "utf8");
 const richTextEditor = await readFile(new URL("../app/ui/RichText.tsx", import.meta.url), "utf8");
+const siteChrome = await readFile(new URL("../app/ui/SiteChrome.tsx", import.meta.url), "utf8");
 
 test("Black Ledger exposes every required semantic token and critical pairs pass AA", () => {
   const properties = theme.themeCssProperties(theme.defaultTheme);
@@ -39,6 +40,7 @@ test("Black Ledger exposes every required semantic token and critical pairs pass
     ["success", "#71d39b", "#0d0f12", 4.5],
     ["warning", "#e0b866", "#0d0f12", 4.5],
     ["danger", "#ff7d82", "#0d0f12", 4.5],
+    ["requested inline link", "#ff0435", "#050607", 4.5],
   ];
   for (const [label,foreground,background,minimum] of pairs) assert.ok(theme.contrastRatio(foreground,background) >= minimum, label);
 });
@@ -65,6 +67,7 @@ test("legacy stock theme values migrate to Black Ledger without replacing custom
 });
 
 test("shared Black Ledger CSS enforces compact phone cards, focus, fields, consent, and reduced motion", () => {
+  const compactCss = css.replace(/\s+/g, "");
   for (const token of [
     "--color-canvas:#050607", "--color-surface-1:#0d0f12", "--color-text-primary:#f5f7f8",
     "--radius-sm:8px", "--radius-md:12px", "--radius-lg:16px", "--radius-xl:22px",
@@ -88,5 +91,14 @@ test("shared Black Ledger CSS enforces compact phone cards, focus, fields, conse
   assert.match(css, /\.home-command-grid\s*\{[\s\S]*border-radius:20px/);
   assert.match(richTextEditor, /aria-pressed=\{pressed\}/);
   assert.match(richTextEditor, /pressed=\{activeFormats\.has\("bold"\)\}/);
+  assert.ok(compactCss.includes(".site-header{background:linear-gradient(#888888f7,#06080af5);"));
+  assert.match(css, /\.logo span\s*\{\s*color:#ff0000;/);
+  assert.match(css, /\.logo b\s*\{[^}]*padding:1px 0 1px 8px;[^}]*background:transparent;[^}]*color:#ffffff;/);
+  assert.match(css, /radial-gradient\(circle at 78% 4%,\s*#fff1,\s*#0000 34%\),\s*radial-gradient\(circle at 6% 68%,\s*#b9a27c0a,\s*#0000 30%\),\s*linear-gradient\(#050607 0%,\s*#313e4b 58%,\s*#050607 100%\)/);
+  assert.ok(compactCss.includes(".home-events{background:linear-gradient(180deg,#40484f,#07090b);}"));
+  assert.match(css, /\.home-discovery\s*\{\s*background:linear-gradient\(#b84b3b61,\s*#0d1115 48%,\s*#090c0f\);/);
+  assert.ok(compactCss.includes(".home-services{background:#5c5f62b5;color:var(--color-text-primary);}"));
+  assert.match(css, /\.home-services \.home-inline-link,\.home-offers \.home-inline-link\s*\{[^}]*min-height:44px;[^}]*background:#050607;[^}]*color:#ff0435;/);
+  assert.match(siteChrome, /<Link className="logo" href="\/" aria-label=\{homeLabel\}><span>Blaj<\/span><b>Azi<\/b><\/Link>/);
   assert.doesNotMatch(css, /#000000\b|#faf8f4\b|#173f4b\b|#e2b85b\b|#dfe3e2\b|neon|glow/i);
 });

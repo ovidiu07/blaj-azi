@@ -1,6 +1,7 @@
 import { env } from "cloudflare:workers";
 import { getRuntimeDb } from "../../../db/runtime";
-import { assertSameOrigin, getOptionalAccount } from "../../server/platform";
+import { submitAuthenticatedEvent } from "../../server/content";
+import { assertSameOrigin, getOptionalAccount, jsonError } from "../../server/platform";
 import { richTextToPlainText } from "../../rich-text";
 
 const allowedTypes = new Set(["business", "event", "offer", "job", "contribution", "contact", "newsletter"]);
@@ -52,13 +53,13 @@ export async function POST(request: Request) {
     assertSameOrigin(request);
     const form = await request.formData();
     const type = String(form.get("type") || "");
-    const email = String(form.get("email") || "").trim().slice(0, 200);
+    const account = await getOptionalAccount();
+    const email = String(account?.email || form.get("email") || "").trim().slice(0, 200);
     if (!allowedTypes.has(type) || !/^\S+@\S+\.\S+$/.test(email)) return Response.json({ error: "Date invalide" }, { status: 400 });
     if (form.get("website")) return Response.json({ ok: true });
     const consent = form.get("consent") ? 1 : 0;
     if (!consent) return Response.json({ error: "Consimțământ necesar" }, { status: 400 });
     const db = getRuntimeDb();
-    const account = await getOptionalAccount();
     if (type === "newsletter") {
       const interests = form.getAll("interests").map(String).slice(0, 10).join(", ");
       await db.prepare(`INSERT INTO newsletter_subscriptions (email, interests, status) VALUES (?, ?, 'pending_confirmation') ON CONFLICT(email) DO UPDATE SET interests=excluded.interests, status='pending_confirmation'`).bind(email, interests).run();
@@ -67,6 +68,16 @@ export async function POST(request: Request) {
     const validationError = validateTypePayload(type, form);
     if (validationError) return Response.json({ error: validationError }, { status: 400 });
     if (type !== "contact" && !form.get("rights")) return Response.json({ error: "Confirmarea drepturilor este obligatorie." }, { status: 400 });
+    if (type === "event" && account) {
+      const submitted = await submitAuthenticatedEvent(account, {
+        title: form.get("title"), locality: form.get("locality"), category: form.get("category"),
+        description: form.get("description"), sourceUrl: form.get("source"), startsAt: form.get("startsAt"),
+        endsAt: form.get("endsAt"), venue: form.get("venue"), address: form.get("address"),
+        organizer: form.get("organizer"), price: form.get("price"), bookingUrl: form.get("bookingUrl"),
+        accessibility: form.get("accessibility"), rightsConfirmed: form.get("rights"), consent: form.get("consent"),
+      });
+      return Response.json({ ok: true, ...submitted }, { status: 201 });
+    }
     let target: { id:number;type:string;title:string;slug:string } | null = null;
     if(type==="contact"){
       const reason=clean(form,"description");
@@ -97,6 +108,6 @@ export async function POST(request: Request) {
     return Response.json({ ok:true, status:"pending_review", reference:`BA-${String(result.meta.last_row_id).padStart(6,"0")}`, id:result.meta.last_row_id }, { status:201 });
   } catch (error) {
     console.error("submission_failed", error instanceof Error ? error.message : "unknown");
-    return Response.json({ error: "Nu am putut salva trimiterea" }, { status: 500 });
+    return jsonError(error);
   }
 }

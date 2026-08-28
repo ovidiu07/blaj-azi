@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any -- type-specific D1 rows are narrowed by the content type */
 import {
   canManageEntity,
+  assertActive,
   cleanText,
   enforceRateLimit,
   isAdmin,
@@ -12,7 +13,7 @@ import {
 } from "./platform";
 import { getRuntimeDb } from "../../db/runtime";
 import { safeExternalHref } from "../site-content";
-import { richTextIsMeaningful, serializeRichText } from "../rich-text";
+import { richTextIsMeaningful, richTextToPlainText, serializeRichText } from "../rich-text";
 
 export const contentTypes = [
   "business",
@@ -50,6 +51,24 @@ export type ContentInput = {
   primaryMediaAltText?: string;
   primaryMediaState?: "legacy" | "selected" | "none";
   details?: Record<string, unknown>;
+};
+
+export type AuthenticatedEventSubmissionInput = {
+  title: unknown;
+  locality: unknown;
+  category: unknown;
+  description: unknown;
+  sourceUrl?: unknown;
+  startsAt: unknown;
+  endsAt?: unknown;
+  venue: unknown;
+  address?: unknown;
+  organizer: unknown;
+  price?: unknown;
+  bookingUrl?: unknown;
+  accessibility?: unknown;
+  rightsConfirmed?: unknown;
+  consent?: unknown;
 };
 
 type ContentRow = {
@@ -292,6 +311,123 @@ export async function createContent(account: LocalAccount, raw: Partial<ContentI
   const mediaAttach = attachMedia(db,media,contentId,businessId);if(mediaAttach)statements.push(mediaAttach);
   await db.batch(statements);
   return { id: contentId, entityId, slug, status: "draft", moderation_state:"draft", version: 1, primaryMediaId:media.id, primaryMediaAltText:media.altText, primaryMediaState:media.state, media:await editorMedia(db,contentId,media) };
+}
+
+export function submissionReference(id: number): string {
+  return `BA-${String(id).padStart(6, "0")}`;
+}
+
+export function normalizeBucharestDateTime(value: unknown): string {
+  const raw = cleanText(value, 40, true);
+  const match = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2}))?$/.exec(raw);
+  if (!match) throw new PlatformError(400, "Data evenimentului nu este validă.", "event_datetime_invalid");
+  const expected = match.slice(1).map(value => value === undefined ? 0 : Number(value));
+  const [year, month, day, hour, minute, second = 0] = expected;
+  if (month < 1 || month > 12 || day < 1 || day > 31 || hour > 23 || minute > 59 || second > 59) {
+    throw new PlatformError(400, "Data evenimentului nu este validă.", "event_datetime_invalid");
+  }
+  const expectedAsUtc = Date.UTC(year, month - 1, day, hour, minute, second);
+  let instant = expectedAsUtc;
+  const formatter = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Europe/Bucharest", year: "numeric", month: "2-digit", day: "2-digit",
+    hour: "2-digit", minute: "2-digit", second: "2-digit", hourCycle: "h23",
+  });
+  const partsAt = (timestamp: number) => {
+    const parts = Object.fromEntries(formatter.formatToParts(new Date(timestamp)).map(part => [part.type, part.value]));
+    return [parts.year, parts.month, parts.day, parts.hour, parts.minute, parts.second].map(Number);
+  };
+  for (let iteration = 0; iteration < 3; iteration += 1) {
+    const actual = partsAt(instant);
+    instant += expectedAsUtc - Date.UTC(actual[0], actual[1] - 1, actual[2], actual[3], actual[4], actual[5]);
+  }
+  if (partsAt(instant).some((part, index) => part !== [year, month, day, hour, minute, second][index])) {
+    throw new PlatformError(400, "Ora locală nu există în fusul Europe/Bucharest.", "event_datetime_invalid");
+  }
+  return new Date(instant).toISOString();
+}
+
+export async function submitAuthenticatedEvent(
+  account: LocalAccount,
+  raw: AuthenticatedEventSubmissionInput,
+  now = new Date(),
+) {
+  assertActive(account);
+  await enforceRateLimit(account, "content.created", 20, 60);
+  if (!raw.rightsConfirmed) throw new PlatformError(400, "Confirmarea drepturilor este obligatorie.", "rights_required");
+  if (!raw.consent) throw new PlatformError(400, "Consimțământ necesar.", "consent_required");
+  await assertCreationScope(account, "event", null);
+
+  const title = cleanText(raw.title, 240, true);
+  const locality = cleanText(raw.locality, 120, true);
+  const category = cleanText(raw.category, 120, true);
+  const venue = cleanText(raw.venue, 240, true);
+  const organizer = cleanText(raw.organizer, 240, true);
+  const excerpt = richValue(raw.description, "Descriere", 4_000, true);
+  const description = richTextToPlainText(excerpt).slice(0, 4_000);
+  const startsAt = normalizeBucharestDateTime(raw.startsAt);
+  const endsAt = raw.endsAt ? normalizeBucharestDateTime(raw.endsAt) : "";
+  if (Date.parse(startsAt) <= now.getTime()) throw new PlatformError(400, "Evenimentul trebuie să înceapă în viitor.", "event_in_past");
+  if (endsAt && Date.parse(endsAt) < Date.parse(startsAt)) throw new PlatformError(400, "Încheierea nu poate fi înaintea începerii.", "event_range_invalid");
+  const sourceUrl = externalOrNull(raw.sourceUrl, "Sursa");
+  const bookingUrl = externalOrNull(raw.bookingUrl, "Linkul de rezervare");
+  const address = cleanText(raw.address, 300);
+  const price = cleanText(raw.price, 500);
+  const accessibility = cleanText(raw.accessibility, 500);
+
+  const db = getRuntimeDb();
+  const categoryRow = await db.prepare("SELECT id FROM categories WHERE type='event' AND lower(trim(name))=lower(trim(?)) LIMIT 1")
+    .bind(category).first<{ id: number }>();
+  const contentId = randomId();
+  const entityId = randomId();
+  const slug = await uniqueSlug("", title);
+  const input: ContentInput = {
+    type: "event", title, slug, locality, categoryId: categoryRow?.id ?? null, excerpt,
+    sourceUrl: sourceUrl || bookingUrl || undefined,
+    details: { startsAt, endsAt, venue, address, organizer, ticketInfo: price, accessibility },
+  };
+  const payload = JSON.stringify({
+    startsAt, endsAt: endsAt || null, venue, address: address || null, organizer,
+    price: price || null, bookingUrl, accessibility: accessibility || null, category,
+  });
+  const statements: D1PreparedStatement[] = [
+    db.prepare("INSERT INTO submissions (type,contributor_name,email,title,locality,category,description,source_url,payload,rights_confirmed,consent,status,user_id,content_item_id) VALUES ('event',?,?,?,?,?,?,?,?,1,1,'pending_review',?,?)")
+      .bind(account.displayName, account.email, title, locality, category, description, sourceUrl, payload, account.id, contentId),
+    db.prepare("INSERT INTO content_records (id,type,entity_id,title,slug,excerpt,primary_media_state,published_media_state,owner_user_id,status,moderation_state,visibility,created_by,last_edited_by,submitted_at,version) VALUES (?,'event',?,?,?,?, 'none','none',?,'pending_review','pending_review','private',?,?,CURRENT_TIMESTAMP,1)")
+      .bind(contentId, entityId, title, slug, excerpt, account.id, account.id, account.id),
+    typeInsert(db, input, entityId, contentId, slug, account),
+    db.prepare("UPDATE events SET status='pending_review' WHERE id=?").bind(entityId),
+    db.prepare("INSERT INTO audit_logs (actor_user_id,action,entity_type,entity_id,metadata) VALUES (?,'content.created','content',?,?)")
+      .bind(account.id, String(contentId), JSON.stringify({ type: "event", status: "pending_review", source: "public_submission_form" })),
+    db.prepare("INSERT INTO audit_logs (actor_user_id,action,entity_type,entity_id,metadata) VALUES (?,'content.submit','content',?,?)")
+      .bind(account.id, String(contentId), JSON.stringify({ previousState: "new", newState: "pending_review" })),
+    db.prepare("INSERT INTO notifications (user_id,notification_type,title,message,related_entity_type,related_entity_id,href) VALUES (?,'content_submitted','Eveniment trimis','Evenimentul a intrat în verificare.','content',?,?)")
+      .bind(account.id, String(contentId), `/cont/continut/${contentId}`),
+  ];
+  const results = await db.batch(statements);
+  const submissionId = Number(results[0]?.meta?.last_row_id ?? 0);
+  if (!submissionId || Number(results[1]?.meta?.changes ?? 0) !== 1 || Number(results[2]?.meta?.changes ?? 0) !== 1) {
+    throw new PlatformError(500, "Trimiterea nu a putut fi persistată complet.", "event_submission_incomplete");
+  }
+  return {
+    id: contentId, contentId, entityId, submissionId, reference: submissionReference(submissionId),
+    status: "pending_review", moderationState: "pending_review", visibility: "private", version: 1,
+  };
+}
+
+export async function listModerationQueue(status = "pending_review") {
+  const rows = await getRuntimeDb().prepare(`SELECT c.*,u.display_name author_name,b.name business_name,
+    s.id submission_id,s.email submission_email,s.category submission_category,s.payload submission_payload,
+    e.starts_at event_starts_at,e.ends_at event_ends_at,e.venue event_venue,e.organizer event_organizer,
+    CASE WHEN c.status='published' THEN CAST(json_extract((SELECT snapshot FROM content_revisions WHERE entity_type='content' AND entity_id=c.id AND moderation_status='pending_review' ORDER BY revision_number DESC LIMIT 1),'$.primaryMediaId') AS INTEGER) WHEN c.primary_media_state='selected' THEN c.primary_media_id WHEN c.primary_media_state='none' THEN NULL ELSE (SELECT id FROM media_assets WHERE content_id=c.id AND media_status='active' ORDER BY created_at DESC,id DESC LIMIT 1) END review_media_id,
+    CASE WHEN c.status='published' THEN json_extract((SELECT snapshot FROM content_revisions WHERE entity_type='content' AND entity_id=c.id AND moderation_status='pending_review' ORDER BY revision_number DESC LIMIT 1),'$.primaryMediaAltText') WHEN c.primary_media_state='selected' THEN c.primary_media_alt_text ELSE (SELECT alt_text FROM media_assets WHERE content_id=c.id AND media_status='active' ORDER BY created_at DESC,id DESC LIMIT 1) END review_media_alt
+    FROM content_records c
+    LEFT JOIN users u ON u.id=c.owner_user_id
+    LEFT JOIN businesses b ON b.id=c.business_id
+    LEFT JOIN submissions s ON s.content_item_id=c.id
+    LEFT JOIN events e ON c.type='event' AND e.id=c.entity_id
+    WHERE c.moderation_state=? AND c.deleted_at IS NULL
+    ORDER BY c.submitted_at ASC LIMIT 200`).bind(cleanText(status, 40) || "pending_review").all<Record<string, unknown>>();
+  return { ...rows, results: rows.results.map(row => ({ ...row, submission_reference: row.submission_id ? submissionReference(Number(row.submission_id)) : null })) };
 }
 
 /**
@@ -583,6 +719,7 @@ export async function adminModerate(account: LocalAccount, id: number, action: s
   let target = transitions[action];
   if (!target) throw new PlatformError(400, "Acțiune de moderare neacceptată.");
   const pendingRevision=await db.prepare("SELECT * FROM content_revisions WHERE entity_type='content' AND entity_id=? AND moderation_status='pending_review' ORDER BY revision_number DESC LIMIT 1").bind(id).first<{id:number;snapshot:string}>();
+  const linkedSubmission=await db.prepare("SELECT id FROM submissions WHERE content_item_id=? ORDER BY id DESC LIMIT 1").bind(id).first<{id:number}>();
   let revisionInput:ContentInput|null=null;
   if(pendingRevision&&row.status==="published"){
     try{revisionInput=JSON.parse(pendingRevision.snapshot) as ContentInput}catch{throw new PlatformError(400,"Revizia nu poate fi citită.")}
@@ -599,8 +736,8 @@ export async function adminModerate(account: LocalAccount, id: number, action: s
   const statements:D1PreparedStatement[]=[
     db.prepare("UPDATE content_records SET status=?,moderation_state=?,visibility=?,published_by=CASE WHEN ?='published' THEN ? ELSE published_by END,published_at=CASE WHEN ?='published' THEN COALESCE(published_at,CURRENT_TIMESTAMP) ELSE published_at END,archived_at=CASE WHEN ?='archived' THEN CURRENT_TIMESTAMP WHEN ?='published' THEN NULL ELSE archived_at END,published_snapshot=?,published_media_id=CASE WHEN ? THEN ? ELSE published_media_id END,published_media_alt_text=CASE WHEN ? THEN ? ELSE published_media_alt_text END,published_media_state=CASE WHEN ? THEN ? ELSE published_media_state END,updated_at=CURRENT_TIMESTAMP,version=version+1 WHERE id=? AND version=?")
       .bind(target.status,target.moderation,target.visibility,target.status,account.id,target.status,target.status,target.status,publishedSnapshot,Boolean(publishMedia),publishMedia?.id??null,Boolean(publishMedia),publishMedia?.alt??null,Boolean(publishMedia),publishMedia?.state??"none",id,row.version),
-    db.prepare("INSERT INTO moderation_records (submission_id,entity_type,entity_id,previous_state,new_state,moderator_id,action,note) VALUES (0,'content',?,?,?,?,?,?)")
-      .bind(id, row.status, target.status, String(account.id), action, cleanText(note, 2000) || null),
+    db.prepare("INSERT INTO moderation_records (submission_id,entity_type,entity_id,previous_state,new_state,moderator_id,action,note) VALUES (?,'content',?,?,?,?,?,?)")
+      .bind(linkedSubmission?.id ?? 0, id, row.status, target.status, String(account.id), action, cleanText(note, 2000) || null),
     db.prepare("INSERT INTO audit_logs (actor_user_id,action,entity_type,entity_id,metadata) VALUES (?,'moderation.decision','content',?,?)")
       .bind(account.id, String(id), JSON.stringify({ action, previousState: row.status, newState: target.status, note: cleanText(note, 2000) || null })),
   ];
@@ -618,6 +755,8 @@ export async function adminModerate(account: LocalAccount, id: number, action: s
   if(action==="soft_delete")statements.push(db.prepare("UPDATE content_records SET deleted_at=CURRENT_TIMESTAMP,deleted_by=?,deletion_reason=? WHERE id=?").bind(account.id,cleanText(note,2000),id));
   if(action==="restore_deleted")statements.push(db.prepare("UPDATE content_records SET deleted_at=NULL,deleted_by=NULL,deletion_reason=NULL WHERE id=?").bind(id));
   if(action==="schedule")statements.push(db.prepare("UPDATE content_records SET scheduled_at=? WHERE id=?").bind(cleanText(scheduledAt,40,true),id));
+  if(linkedSubmission)statements.push(db.prepare("UPDATE submissions SET status=? WHERE id=?").bind(target.status,linkedSubmission.id));
+  if(row.type==="event"&&row.entity_id)statements.push(db.prepare("UPDATE events SET status=? WHERE id=?").bind(target.status,row.entity_id));
   if(publicationMedia?.approvalStatus==="pending"){
     statements.push(db.prepare("UPDATE media_assets SET approval_status='approved',orphaned_at=NULL WHERE id=? AND approval_status='pending' AND media_status='active'").bind(publicationMedia.id));
     statements.push(db.prepare("INSERT INTO audit_logs (actor_user_id,action,entity_type,entity_id,metadata) VALUES (?,'media.approved_via_content','media',?,?)").bind(account.id,String(publicationMedia.id),JSON.stringify({contentId:id,moderationAction:action})));
